@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @AppStorage("serverHost") private var serverHost = ""
-    @AppStorage("volumePercent") private var volumePercent = 50.0
     @StateObject private var sender = CommandSender()
 
     var body: some View {
@@ -11,24 +10,42 @@ struct ContentView: View {
 
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
                 GeometryReader { geometry in
-                    let coverSize = min(geometry.size.height * 0.62, geometry.size.width * 0.34, 300)
+                    let horizontalPadding = max(24, geometry.size.width * 0.08)
+                    let coverSize = min(geometry.size.width - (horizontalPadding * 2), geometry.size.height * 0.42, 360)
 
-                    HStack(spacing: 28) {
-                        Spacer(minLength: 0)
-
-                        sideInfo
-                            .frame(width: min(geometry.size.width * 0.22, 220))
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 24)
 
                         coverArt(size: coverSize)
 
-                        controlsPane
-                            .frame(width: min(geometry.size.width * 0.32, 340))
+                        VStack(spacing: 10) {
+                            Text(currentTitle)
+                                .font(.system(size: 28, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
 
-                        Spacer(minLength: 0)
+                            Text(currentArtist)
+                                .font(.system(size: 17, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.58))
+                                .lineLimit(1)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.top, 28)
+
+                        progressSection
+                            .padding(.top, 24)
+
+                        controlsSection
+                            .padding(.top, 34)
+
+                        Spacer(minLength: 18)
+
+                        connectionSection
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, horizontalPadding)
                     .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -36,62 +53,6 @@ struct ContentView: View {
         .task(id: serverHost) {
             sender.stopPolling()
             await sender.startPolling(host: serverHost)
-        }
-    }
-
-    private var sideInfo: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(currentTitle)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .lineLimit(3)
-
-            Text(currentArtist)
-                .font(.system(size: 17, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.62))
-                .lineLimit(2)
-
-            VStack(alignment: .leading, spacing: 10) {
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(height: 5)
-
-                    GeometryReader { proxy in
-                        Capsule()
-                            .fill(Color.white)
-                            .frame(width: max(progressFraction, 0.015) * proxy.size.width, height: 5)
-                    }
-                }
-                .frame(height: 5)
-
-                Text("\(formattedElapsed)/\(formattedDuration)")
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.54))
-            }
-
-            Spacer(minLength: 0)
-
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("PC IP", text: $serverHost)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.decimalPad)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.72))
-
-                Text(sender.statusMessage)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.30))
-                    .lineLimit(2)
-
-                Text(AppVersion.current)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.24))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color.white.opacity(0.03))
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }
 
@@ -117,90 +78,103 @@ struct ContentView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
     }
 
     private var placeholderCover: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.white.opacity(0.045))
 
             Image(systemName: "music.note")
                 .font(.system(size: 56, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.28))
+                .foregroundStyle(Color.white.opacity(0.24))
         }
     }
 
-    private var controlsPane: some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 0)
+    private var progressSection: some View {
+        VStack(spacing: 10) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 4)
 
-            transportButton(icon: "backward.fill", size: 78) {
+                    Capsule()
+                        .fill(Color.white)
+                        .frame(width: max(proxy.size.width * progressFraction, progressFraction > 0 ? 8 : 0), height: 4)
+                }
+            }
+            .frame(height: 4)
+
+            HStack {
+                Text(formattedElapsed)
+                Spacer()
+                Text(formattedRemaining)
+            }
+            .font(.system(size: 13, weight: .medium, design: .monospaced))
+            .foregroundStyle(Color.white.opacity(0.46))
+        }
+    }
+
+    private var controlsSection: some View {
+        HStack(spacing: 24) {
+            transportButton(icon: "backward.fill", size: 58) {
                 await sender.send(command: .previousTrack, to: serverHost)
             }
 
-            transportButton(icon: "playpause.fill", size: 96) {
+            transportButton(icon: playPauseIcon, size: 84, filled: true) {
                 await sender.send(command: .playPause, to: serverHost)
             }
 
-            transportButton(icon: "forward.fill", size: 78) {
+            transportButton(icon: "forward.fill", size: 58) {
                 await sender.send(command: .nextTrack, to: serverHost)
             }
-
-            VStack(spacing: 14) {
-                HStack(spacing: 12) {
-                    Image(systemName: "speaker.fill")
-                        .foregroundStyle(Color.white.opacity(0.54))
-
-                    Slider(value: $volumePercent, in: 0...100, step: 1)
-                        .tint(.white)
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 140)
-
-                    Image(systemName: "speaker.wave.3.fill")
-                        .foregroundStyle(Color.white.opacity(0.76))
-                }
-                .frame(height: 150)
-
-                Button {
-                    Task {
-                        await sender.send(command: .setVolume, value: Int(volumePercent), to: serverHost)
-                    }
-                } label: {
-                    Text("\(Int(volumePercent))%")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(Color.white)
-                        .clipShape(Capsule())
-                }
-            }
-
-            Spacer(minLength: 0)
         }
-        .frame(maxHeight: .infinity)
     }
 
-    private func transportButton(icon: String, size: CGFloat, action: @escaping () async -> Void) -> some View {
+    private var connectionSection: some View {
+        VStack(spacing: 10) {
+            TextField("PC IP", text: $serverHost)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.decimalPad)
+                .submitLabel(.done)
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.white.opacity(0.72))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(Color.white.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+            HStack {
+                Text(sender.statusMessage)
+                Spacer()
+                Text(AppVersion.current)
+            }
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(Color.white.opacity(0.28))
+        }
+    }
+
+    private func transportButton(icon: String, size: CGFloat, filled: Bool = false, action: @escaping () async -> Void) -> some View {
         Button {
             Task {
                 await action()
             }
         } label: {
             Image(systemName: icon)
-                .font(.system(size: size * 0.34, weight: .bold))
-                .foregroundStyle(.white)
+                .font(.system(size: size * 0.32, weight: .semibold))
+                .foregroundStyle(filled ? .black : .white)
                 .frame(width: size, height: size)
-                .background(Color.white.opacity(0.07))
+                .background(filled ? Color.white : Color.white.opacity(0.07))
                 .clipShape(Circle())
                 .overlay(
                     Circle()
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        .stroke(Color.white.opacity(filled ? 0.0 : 0.10), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -222,6 +196,14 @@ struct ContentView: View {
         return status.artist.isEmpty ? "Unknown Artist" : status.artist
     }
 
+    private var playPauseIcon: String {
+        guard let status = sender.nowPlaying else {
+            return "play.fill"
+        }
+
+        return status.isPlaying ? "pause.fill" : "play.fill"
+    }
+
     private var progressFraction: CGFloat {
         guard let status = sender.nowPlaying, status.durationSeconds > 0 else {
             return 0
@@ -234,8 +216,10 @@ struct ContentView: View {
         formatTime(currentPositionSeconds)
     }
 
-    private var formattedDuration: String {
-        formatTime(sender.nowPlaying?.durationSeconds ?? 0)
+    private var formattedRemaining: String {
+        let duration = sender.nowPlaying?.durationSeconds ?? 0
+        let remaining = max(duration - currentPositionSeconds, 0)
+        return "-\(formatTime(remaining))"
     }
 
     private var currentPositionSeconds: Double {
