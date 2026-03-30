@@ -9,123 +9,120 @@ struct ContentView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            GeometryReader { geometry in
-                let coverSize = min(geometry.size.height * 0.52, geometry.size.width * 0.30)
+            TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+                GeometryReader { geometry in
+                    let coverSize = min(geometry.size.height * 0.48, geometry.size.width * 0.28, 250)
 
-                VStack(spacing: 22) {
-                    Spacer(minLength: 10)
+                    VStack(spacing: 18) {
+                        Spacer(minLength: 8)
 
-                    coverArt(size: coverSize)
+                        coverArt(size: coverSize)
 
-                    VStack(spacing: 8) {
-                        Text(currentTitle)
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
+                        VStack(spacing: 6) {
+                            Text(currentTitle)
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
 
-                        Text(currentArtist)
-                            .font(.system(size: 18, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.62))
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: 560)
+                            Text(currentArtist)
+                                .font(.system(size: 17, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.6))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: 560)
 
-                    VStack(spacing: 10) {
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.12))
-                                .frame(height: 6)
-
-                            GeometryReader { barGeometry in
+                        VStack(spacing: 10) {
+                            ZStack(alignment: .leading) {
                                 Capsule()
-                                    .fill(Color.white)
-                                    .frame(width: max(progressFraction, 0.015) * barGeometry.size.width, height: 6)
+                                    .fill(Color.white.opacity(0.12))
+                                    .frame(height: 5)
+
+                                GeometryReader { proxy in
+                                    Capsule()
+                                        .fill(Color.white)
+                                        .frame(width: max(progressFraction, 0.015) * proxy.size.width, height: 5)
+                                }
+                            }
+                            .frame(width: min(geometry.size.width * 0.56, 560), height: 5)
+
+                            Text("\(formattedElapsed)/\(formattedDuration)")
+                                .font(.system(size: 15, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.56))
+                        }
+
+                        HStack(spacing: 30) {
+                            transportButton(icon: "backward.fill", size: 72) {
+                                await sender.send(command: .previousTrack, to: serverHost)
+                            }
+
+                            transportButton(icon: "playpause.fill", size: 92) {
+                                await sender.send(command: .playPause, to: serverHost)
+                            }
+
+                            transportButton(icon: "forward.fill", size: 72) {
+                                await sender.send(command: .nextTrack, to: serverHost)
                             }
                         }
-                        .frame(maxWidth: 560)
-                        .frame(height: 6)
+                        .padding(.top, 4)
 
-                        HStack {
-                            Text(formattedElapsed)
+                        VStack(spacing: 12) {
+                            HStack(spacing: 14) {
+                                Image(systemName: "speaker.fill")
+                                    .foregroundStyle(Color.white.opacity(0.54))
+
+                                Slider(value: $volumePercent, in: 0...100, step: 1)
+                                    .tint(.white)
+
+                                Image(systemName: "speaker.wave.3.fill")
+                                    .foregroundStyle(Color.white.opacity(0.76))
+                            }
+                            .frame(width: min(geometry.size.width * 0.44, 420))
+
+                            Button {
+                                Task {
+                                    await sender.send(command: .setVolume, value: Int(volumePercent), to: serverHost)
+                                }
+                            } label: {
+                                Text("Volume \(Int(volumePercent))%")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 22)
+                                    .padding(.vertical, 11)
+                                    .background(Color.white)
+                                    .clipShape(Capsule())
+                            }
+                        }
+
+                        Spacer(minLength: 8)
+
+                        HStack(spacing: 10) {
+                            TextField("PC IP", text: $serverHost)
+                                .textInputAutocapitalization(.never)
+                                .keyboardType(.decimalPad)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.72))
+                                .frame(width: 170)
+
                             Spacer()
-                            Text(formattedDuration)
+
+                            Text(sender.statusMessage)
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.32))
+                                .lineLimit(1)
+
+                            Text(AppVersion.current)
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.24))
                         }
-                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.55))
-                        .frame(maxWidth: 560)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.03))
+                        .clipShape(Capsule())
+                        .frame(maxWidth: 620)
                     }
-
-                    HStack(spacing: 28) {
-                        transportButton(icon: "backward.fill", size: 78) {
-                            await sender.send(command: .previousTrack, to: serverHost)
-                        }
-
-                        transportButton(icon: "playpause.fill", size: 96) {
-                            await sender.send(command: .playPause, to: serverHost)
-                        }
-
-                        transportButton(icon: "forward.fill", size: 78) {
-                            await sender.send(command: .nextTrack, to: serverHost)
-                        }
-                    }
-
-                    VStack(spacing: 12) {
-                        HStack(spacing: 14) {
-                            Image(systemName: "speaker.fill")
-                                .foregroundStyle(Color.white.opacity(0.55))
-
-                            Slider(value: $volumePercent, in: 0...100, step: 1)
-                                .tint(.white)
-
-                            Image(systemName: "speaker.wave.3.fill")
-                                .foregroundStyle(Color.white.opacity(0.78))
-                        }
-                        .frame(maxWidth: 420)
-
-                        Button {
-                            Task {
-                                await sender.send(command: .setVolume, value: Int(volumePercent), to: serverHost)
-                            }
-                        } label: {
-                            Text("Volume \(Int(volumePercent))%")
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 22)
-                                .padding(.vertical, 12)
-                                .background(Color.white)
-                                .clipShape(Capsule())
-                        }
-                    }
-
-                    Spacer(minLength: 10)
-
-                    HStack(spacing: 10) {
-                        TextField("PC IP", text: $serverHost)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.decimalPad)
-                            .font(.system(size: 13, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .frame(width: 170)
-
-                        Text(sender.statusMessage)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.38))
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        Text(AppVersion.current)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.28))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.03))
-                    .clipShape(Capsule())
-                    .frame(maxWidth: 620)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 24)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 24)
             }
         }
         .preferredColorScheme(.dark)
@@ -157,20 +154,20 @@ struct ContentView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
     }
 
     private var placeholderCover: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(Color.white.opacity(0.04))
 
             Image(systemName: "music.note")
-                .font(.system(size: 52, weight: .medium))
+                .font(.system(size: 50, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.28))
         }
     }
@@ -185,11 +182,11 @@ struct ContentView: View {
                 .font(.system(size: size * 0.34, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)
-                .background(Color.white.opacity(0.06))
+                .background(Color.white.opacity(0.07))
                 .clipShape(Circle())
                 .overlay(
                     Circle()
-                        .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -233,15 +230,15 @@ struct ContentView: View {
         }
 
         if !status.isPlaying {
-            return status.positionSeconds
+            return min(max(status.positionSeconds, 0), status.durationSeconds)
         }
 
-        let elapsed = Date().timeIntervalSince1970 - (Double(status.syncUnixMilliseconds) / 1000.0)
-        return min(max(status.positionSeconds + elapsed, 0), status.durationSeconds)
+        let elapsedSinceSync = Date().timeIntervalSince1970 - (Double(status.syncUnixMilliseconds) / 1000.0)
+        return min(max(status.positionSeconds + elapsedSinceSync, 0), status.durationSeconds)
     }
 
     private func formatTime(_ value: Double) -> String {
-        let totalSeconds = max(Int(value.rounded()), 0)
+        let totalSeconds = max(Int(value.rounded(.down)), 0)
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         let seconds = totalSeconds % 60
