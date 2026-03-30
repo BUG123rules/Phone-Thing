@@ -12,135 +12,109 @@ struct CommandPayload: Encodable {
     let value: Int?
 }
 
-struct NowPlayingSnapshot: Decodable {
+struct NowPlayingStatus: Decodable, Equatable {
     let isAvailable: Bool
     let title: String
     let artist: String
-    let timeline: String
-    let albumArtDataUrl: String
     let sourceAppId: String
+    let isPlaying: Bool
+    let positionSeconds: Double
+    let durationSeconds: Double
+    let syncUnixMilliseconds: Int64
+    let artworkRevision: String
 }
 
 @MainActor
 final class CommandSender: ObservableObject {
-    @Published var statusMessage: String = "Ready to send commands."
-    @Published var isSending = false
-    @Published var nowPlaying: NowPlayingSnapshot?
+    @Published var statusMessage: String = "Ready"
+    @Published var nowPlaying: NowPlayingStatus?
+    @Published var artworkURL: URL?
+
+    private var isPolling = false
 
     func send(command: RemoteCommand, value: Int? = nil, to host: String) async {
         guard let url = commandURL(from: host) else {
-            statusMessage = "Enter your PC's IP address first."
+            statusMessage = "Enter your PC IP."
             return
         }
-
-        isSending = true
-        defer { isSending = false }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 5
+        request.timeoutInterval = 2
 
         do {
             request.httpBody = try JSONEncoder().encode(CommandPayload(command: command.rawValue, value: value))
             let (data, response) = try await URLSession.shared.data(for: request)
 
             if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
-                statusMessage = "Sent \(label(for: command, value: value))."
-                await fetchNowPlaying(from: host, silent: true)
+                statusMessage = "Connected"
+                await refreshStatus(from: host, silent: true)
             } else {
-                let body = String(data: data, encoding: .utf8) ?? "No response body"
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let body = String(data: data, encoding: .utf8) ?? "No response body"
                 statusMessage = "PC error \(code): \(body)"
             }
         } catch {
-            statusMessage = "Couldn't reach the PC app. Check the IP, Wi-Fi, and firewall."
+            statusMessage = "Connection failed"
         }
     }
 
-    func healthCheck(to host: String) async {
-        guard let url = healthURL(from: host) else {
-            statusMessage = "Enter a valid IP or URL first."
+    func startPolling(host: String) async {
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty else {
             return
         }
 
-        isSending = true
-        defer { isSending = false }
+        isPolling = true
+        await refreshStatus(from: trimmedHost, silent: true)
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 5
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(data: data, encoding: .utf8) ?? "No response body"
-            statusMessage = "Health \(code): \(body)"
-        } catch {
-            statusMessage = "Health check failed: \(error.localizedDescription)"
+        while isPolling && !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await refreshStatus(from: trimmedHost, silent: true)
         }
     }
 
-    func fetchNowPlaying(from host: String, silent: Bool = false) async {
-        guard let url = nowPlayingURL(from: host) else {
+    func stopPolling() {
+        isPolling = false
+    }
+
+    private func refreshStatus(from host: String, silent: Bool) async {
+        guard let url = statusURL(from: host) else {
             if !silent {
-                statusMessage = "Enter a valid IP or URL first."
+                statusMessage = "Enter your PC IP."
             }
             return
         }
 
-        if !silent {
-            isSending = true
-        }
-        defer {
-            if !silent {
-                isSending = false
-            }
-        }
-
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.timeoutInterval = 5
+        request.timeoutInterval = 1.5
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
                 if !silent {
-                    statusMessage = "No HTTP response from PC app."
+                    statusMessage = "Status update failed"
                 }
                 return
             }
 
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let body = String(data: data, encoding: .utf8) ?? "No response body"
-                if !silent {
-                    statusMessage = "Now playing error \(httpResponse.statusCode): \(body)"
-                }
-                return
+            let status = try JSONDecoder().decode(NowPlayingStatus.self, from: data)
+            let previousRevision = nowPlaying?.artworkRevision ?? ""
+            nowPlaying = status
+
+            if status.artworkRevision != previousRevision {
+                artworkURL = artworkURL(from: host, revision: status.artworkRevision)
             }
 
-            let snapshot = try JSONDecoder().decode(NowPlayingSnapshot.self, from: data)
-            nowPlaying = snapshot
             if !silent {
-                statusMessage = snapshot.isAvailable ? "Fetched now playing from PC." : "PC reports nothing is currently playing."
+                statusMessage = "Connected"
             }
         } catch {
             if !silent {
-                statusMessage = "Now playing fetch failed: \(error.localizedDescription)"
+                statusMessage = "Status update failed"
             }
-        }
-    }
-
-    func label(for command: RemoteCommand, value: Int?) -> String {
-        switch command {
-        case .previousTrack:
-            return "Previous Track"
-        case .playPause:
-            return "Play / Pause"
-        case .nextTrack:
-            return "Next Track"
-        case .setVolume:
-            return "Volume \(value ?? 0)%"
         }
     }
 
@@ -148,12 +122,20 @@ final class CommandSender: ObservableObject {
         normalizedBaseURL(from: input)?.appendingPathComponent("api/commands")
     }
 
-    private func healthURL(from input: String) -> URL? {
-        normalizedBaseURL(from: input)?.appendingPathComponent("api/health")
+    private func statusURL(from input: String) -> URL? {
+        normalizedBaseURL(from: input)?.appendingPathComponent("api/now-playing/status")
     }
 
-    private func nowPlayingURL(from input: String) -> URL? {
-        normalizedBaseURL(from: input)?.appendingPathComponent("api/now-playing")
+    private func artworkURL(from input: String, revision: String) -> URL? {
+        guard !revision.isEmpty else {
+            return nil
+        }
+
+        return normalizedBaseURL(from: input)?
+            .appendingPathComponent("api")
+            .appendingPathComponent("now-playing")
+            .appendingPathComponent("artwork")
+            .appendingPathComponent(revision)
     }
 
     private func normalizedBaseURL(from input: String) -> URL? {
@@ -183,11 +165,7 @@ final class CommandSender: ObservableObject {
             var components = URLComponents()
             components.scheme = "http"
             components.host = host
-            if parts.count > 1, let port = Int(parts[1]) {
-                components.port = port
-            } else {
-                components.port = 5050
-            }
+            components.port = (parts.count > 1 ? Int(parts[1]) : nil) ?? 5050
             return components.url
         }
 
