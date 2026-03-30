@@ -8,15 +8,21 @@ struct ContentView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
                 GeometryReader { geometry in
                     let horizontalPadding = max(24, geometry.size.width * 0.08)
-                    let coverSize = min(geometry.size.width - (horizontalPadding * 2), geometry.size.height * 0.42, 360)
+                    let sideButtonSize = min(max(geometry.size.width * 0.14, 50), 62)
+                    let sideSpacing = max(14, geometry.size.width * 0.035)
+                    let coverSize = min(
+                        max(geometry.size.width - (horizontalPadding * 2) - (sideButtonSize * 2) - (sideSpacing * 2), 140),
+                        geometry.size.height * 0.40,
+                        320
+                    )
 
                     VStack(spacing: 0) {
                         Spacer(minLength: 24)
 
-                        coverArt(size: coverSize)
+                        artworkRow(size: coverSize, buttonSize: sideButtonSize, spacing: sideSpacing)
 
                         VStack(spacing: 10) {
                             Text(currentTitle)
@@ -33,11 +39,8 @@ struct ContentView: View {
                         }
                         .padding(.top, 28)
 
-                        progressSection
+                        progressSection(at: context.date)
                             .padding(.top, 24)
-
-                        controlsSection
-                            .padding(.top, 34)
 
                         Spacer(minLength: 18)
 
@@ -56,25 +59,45 @@ struct ContentView: View {
         }
     }
 
+    private func artworkRow(size: CGFloat, buttonSize: CGFloat, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            transportButton(icon: "backward.fill", size: buttonSize) {
+                await sender.send(command: .previousTrack, to: serverHost)
+            }
+
+            coverArt(size: size)
+
+            transportButton(icon: "forward.fill", size: buttonSize) {
+                await sender.send(command: .nextTrack, to: serverHost)
+            }
+        }
+    }
+
     private func coverArt(size: CGFloat) -> some View {
-        Group {
-            if let url = sender.artworkURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    case .failure(_):
-                        placeholderCover
-                    case .empty:
-                        placeholderCover
-                    @unknown default:
-                        placeholderCover
+        Button {
+            Task {
+                await sender.send(command: .playPause, to: serverHost)
+            }
+        } label: {
+            Group {
+                if let url = sender.artworkURL {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        case .failure(_):
+                            placeholderCover
+                        case .empty:
+                            placeholderCover
+                        @unknown default:
+                            placeholderCover
+                        }
                     }
+                } else {
+                    placeholderCover
                 }
-            } else {
-                placeholderCover
             }
         }
         .frame(width: size, height: size)
@@ -83,6 +106,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
+        .buttonStyle(.plain)
     }
 
     private var placeholderCover: some View {
@@ -96,7 +120,9 @@ struct ContentView: View {
         }
     }
 
-    private var progressSection: some View {
+    private func progressSection(at now: Date) -> some View {
+        let fraction = progressFraction(at: now)
+
         VStack(spacing: 10) {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
@@ -106,34 +132,18 @@ struct ContentView: View {
 
                     Capsule()
                         .fill(Color.white)
-                        .frame(width: max(proxy.size.width * progressFraction, progressFraction > 0 ? 8 : 0), height: 4)
+                        .frame(width: max(proxy.size.width * fraction, fraction > 0 ? 8 : 0), height: 4)
                 }
             }
             .frame(height: 4)
 
             HStack {
-                Text(formattedElapsed)
+                Text(formattedElapsed(at: now))
                 Spacer()
-                Text(formattedRemaining)
+                Text(formattedRemaining(at: now))
             }
             .font(.system(size: 13, weight: .medium, design: .monospaced))
             .foregroundStyle(Color.white.opacity(0.46))
-        }
-    }
-
-    private var controlsSection: some View {
-        HStack(spacing: 24) {
-            transportButton(icon: "backward.fill", size: 58) {
-                await sender.send(command: .previousTrack, to: serverHost)
-            }
-
-            transportButton(icon: playPauseIcon, size: 84, filled: true) {
-                await sender.send(command: .playPause, to: serverHost)
-            }
-
-            transportButton(icon: "forward.fill", size: 58) {
-                await sender.send(command: .nextTrack, to: serverHost)
-            }
         }
     }
 
@@ -160,7 +170,7 @@ struct ContentView: View {
         }
     }
 
-    private func transportButton(icon: String, size: CGFloat, filled: Bool = false, action: @escaping () async -> Void) -> some View {
+    private func transportButton(icon: String, size: CGFloat, action: @escaping () async -> Void) -> some View {
         Button {
             Task {
                 await action()
@@ -168,13 +178,13 @@ struct ContentView: View {
         } label: {
             Image(systemName: icon)
                 .font(.system(size: size * 0.32, weight: .semibold))
-                .foregroundStyle(filled ? .black : .white)
+                .foregroundStyle(.white)
                 .frame(width: size, height: size)
-                .background(filled ? Color.white : Color.white.opacity(0.07))
+                .background(Color.white.opacity(0.07))
                 .clipShape(Circle())
                 .overlay(
                     Circle()
-                        .stroke(Color.white.opacity(filled ? 0.0 : 0.10), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -196,33 +206,25 @@ struct ContentView: View {
         return status.artist.isEmpty ? "Unknown Artist" : status.artist
     }
 
-    private var playPauseIcon: String {
-        guard let status = sender.nowPlaying else {
-            return "play.fill"
-        }
-
-        return status.isPlaying ? "pause.fill" : "play.fill"
-    }
-
-    private var progressFraction: CGFloat {
+    private func progressFraction(at now: Date) -> CGFloat {
         guard let status = sender.nowPlaying, status.durationSeconds > 0 else {
             return 0
         }
 
-        return min(max(CGFloat(currentPositionSeconds / status.durationSeconds), 0), 1)
+        return min(max(CGFloat(currentPositionSeconds(at: now) / status.durationSeconds), 0), 1)
     }
 
-    private var formattedElapsed: String {
-        formatTime(currentPositionSeconds)
+    private func formattedElapsed(at now: Date) -> String {
+        formatTime(currentPositionSeconds(at: now))
     }
 
-    private var formattedRemaining: String {
+    private func formattedRemaining(at now: Date) -> String {
         let duration = sender.nowPlaying?.durationSeconds ?? 0
-        let remaining = max(duration - currentPositionSeconds, 0)
+        let remaining = max(duration - currentPositionSeconds(at: now), 0)
         return "-\(formatTime(remaining))"
     }
 
-    private var currentPositionSeconds: Double {
+    private func currentPositionSeconds(at now: Date) -> Double {
         guard let status = sender.nowPlaying else {
             return 0
         }
@@ -231,7 +233,7 @@ struct ContentView: View {
             return min(max(status.positionSeconds, 0), status.durationSeconds)
         }
 
-        let elapsedSinceSync = Date().timeIntervalSince1970 - (Double(status.syncUnixMilliseconds) / 1000.0)
+        let elapsedSinceSync = now.timeIntervalSince1970 - (Double(status.syncUnixMilliseconds) / 1000.0)
         return min(max(status.positionSeconds + elapsedSinceSync, 0), status.durationSeconds)
     }
 
