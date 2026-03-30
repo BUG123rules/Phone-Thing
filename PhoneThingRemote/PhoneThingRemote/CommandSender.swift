@@ -47,6 +47,7 @@ final class CommandSender: ObservableObject {
 
             if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
                 statusMessage = "Sent \(label(for: command, value: value))."
+                await fetchNowPlaying(from: host, silent: true)
             } else {
                 let body = String(data: data, encoding: .utf8) ?? "No response body"
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -80,14 +81,22 @@ final class CommandSender: ObservableObject {
         }
     }
 
-    func fetchNowPlaying(from host: String) async {
+    func fetchNowPlaying(from host: String, silent: Bool = false) async {
         guard let url = nowPlayingURL(from: host) else {
-            statusMessage = "Enter a valid IP or URL first."
+            if !silent {
+                statusMessage = "Enter a valid IP or URL first."
+            }
             return
         }
 
-        isSending = true
-        defer { isSending = false }
+        if !silent {
+            isSending = true
+        }
+        defer {
+            if !silent {
+                isSending = false
+            }
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -96,21 +105,29 @@ final class CommandSender: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
-                statusMessage = "No HTTP response from PC app."
+                if !silent {
+                    statusMessage = "No HTTP response from PC app."
+                }
                 return
             }
 
             guard (200...299).contains(httpResponse.statusCode) else {
                 let body = String(data: data, encoding: .utf8) ?? "No response body"
-                statusMessage = "Now playing error \(httpResponse.statusCode): \(body)"
+                if !silent {
+                    statusMessage = "Now playing error \(httpResponse.statusCode): \(body)"
+                }
                 return
             }
 
             let snapshot = try JSONDecoder().decode(NowPlayingSnapshot.self, from: data)
             nowPlaying = snapshot
-            statusMessage = snapshot.isAvailable ? "Fetched now playing from PC." : "PC reports nothing is currently playing."
+            if !silent {
+                statusMessage = snapshot.isAvailable ? "Fetched now playing from PC." : "PC reports nothing is currently playing."
+            }
         } catch {
-            statusMessage = "Now playing fetch failed: \(error.localizedDescription)"
+            if !silent {
+                statusMessage = "Now playing fetch failed: \(error.localizedDescription)"
+            }
         }
     }
 
