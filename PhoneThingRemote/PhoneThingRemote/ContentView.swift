@@ -17,9 +17,15 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("PhoneThing Remote")
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text("PhoneThing Remote")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+
+                            Text(AppVersion.current)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.68))
+                        }
 
                         Text("Simple media controls for your PC. This version just sends commands and lets the PC app show what arrived.")
                             .font(.system(size: 16, weight: .medium, design: .rounded))
@@ -42,6 +48,19 @@ struct ContentView: View {
                         Text("Use your PC's local Wi-Fi IP address shown in the desktop app.")
                             .font(.footnote)
                             .foregroundStyle(Color.white.opacity(0.68))
+
+                        Button {
+                            Task {
+                                await sender.healthCheck(to: serverHost)
+                            }
+                        } label: {
+                            Text("Test Connection")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Color.white)
                     }
 
                     HStack(spacing: 14) {

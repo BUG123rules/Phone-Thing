@@ -18,15 +18,8 @@ final class CommandSender: ObservableObject {
     @Published var isSending = false
 
     func send(command: RemoteCommand, value: Int? = nil, to host: String) async {
-        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !trimmedHost.isEmpty else {
+        guard let url = commandURL(from: host) else {
             statusMessage = "Enter your PC's IP address first."
-            return
-        }
-
-        guard let url = URL(string: "http://\(trimmedHost):5050/api/commands") else {
-            statusMessage = "The server address looks invalid."
             return
         }
 
@@ -40,15 +33,40 @@ final class CommandSender: ObservableObject {
 
         do {
             request.httpBody = try JSONEncoder().encode(CommandPayload(command: command.rawValue, value: value))
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
 
             if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
                 statusMessage = "Sent \(label(for: command, value: value))."
             } else {
-                statusMessage = "The PC app responded with an error."
+                let body = String(data: data, encoding: .utf8) ?? "No response body"
+                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                statusMessage = "PC error \(code): \(body)"
             }
         } catch {
             statusMessage = "Couldn't reach the PC app. Check the IP, Wi-Fi, and firewall."
+        }
+    }
+
+    func healthCheck(to host: String) async {
+        guard let url = healthURL(from: host) else {
+            statusMessage = "Enter a valid IP or URL first."
+            return
+        }
+
+        isSending = true
+        defer { isSending = false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 5
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? "No response body"
+            statusMessage = "Health \(code): \(body)"
+        } catch {
+            statusMessage = "Health check failed: \(error.localizedDescription)"
         }
     }
 
@@ -63,5 +81,55 @@ final class CommandSender: ObservableObject {
         case .setVolume:
             return "Volume \(value ?? 0)%"
         }
+    }
+
+    private func commandURL(from input: String) -> URL? {
+        normalizedBaseURL(from: input)?.appendingPathComponent("api/commands")
+    }
+
+    private func healthURL(from input: String) -> URL? {
+        normalizedBaseURL(from: input)?.appendingPathComponent("api/health")
+    }
+
+    private func normalizedBaseURL(from input: String) -> URL? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        if let explicitURL = URL(string: trimmed), explicitURL.scheme != nil {
+            guard var components = URLComponents(url: explicitURL, resolvingAgainstBaseURL: false) else {
+                return nil
+            }
+
+            components.scheme = components.scheme ?? "http"
+            components.port = components.port ?? 5050
+            components.path = ""
+            return components.url
+        }
+
+        if trimmed.contains(":") {
+            let parts = trimmed.split(separator: ":", maxSplits: 1).map(String.init)
+            guard let host = parts.first, !host.isEmpty else {
+                return nil
+            }
+
+            var components = URLComponents()
+            components.scheme = "http"
+            components.host = host
+            if parts.count > 1, let port = Int(parts[1]) {
+                components.port = port
+            } else {
+                components.port = 5050
+            }
+            return components.url
+        }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = trimmed
+        components.port = 5050
+        return components.url
     }
 }
