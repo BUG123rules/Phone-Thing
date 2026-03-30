@@ -1,0 +1,19 @@
+# Windows / .NET / local tooling
+.dotnet/
+dist/
+scripts/
+PhoneThing.sln
+PhoneThing.PC/
+
+# Common OS/editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Xcode user-specific files
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Optional: ignore temp build outputs if they appear inside the iOS project later
+build/
