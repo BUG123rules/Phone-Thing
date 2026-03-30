@@ -12,10 +12,20 @@ struct CommandPayload: Encodable {
     let value: Int?
 }
 
+struct NowPlayingSnapshot: Decodable {
+    let isAvailable: Bool
+    let title: String
+    let artist: String
+    let timeline: String
+    let albumArtDataUrl: String
+    let sourceAppId: String
+}
+
 @MainActor
 final class CommandSender: ObservableObject {
     @Published var statusMessage: String = "Ready to send commands."
     @Published var isSending = false
+    @Published var nowPlaying: NowPlayingSnapshot?
 
     func send(command: RemoteCommand, value: Int? = nil, to host: String) async {
         guard let url = commandURL(from: host) else {
@@ -70,6 +80,40 @@ final class CommandSender: ObservableObject {
         }
     }
 
+    func fetchNowPlaying(from host: String) async {
+        guard let url = nowPlayingURL(from: host) else {
+            statusMessage = "Enter a valid IP or URL first."
+            return
+        }
+
+        isSending = true
+        defer { isSending = false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 5
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                statusMessage = "No HTTP response from PC app."
+                return
+            }
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let body = String(data: data, encoding: .utf8) ?? "No response body"
+                statusMessage = "Now playing error \(httpResponse.statusCode): \(body)"
+                return
+            }
+
+            let snapshot = try JSONDecoder().decode(NowPlayingSnapshot.self, from: data)
+            nowPlaying = snapshot
+            statusMessage = snapshot.isAvailable ? "Fetched now playing from PC." : "PC reports nothing is currently playing."
+        } catch {
+            statusMessage = "Now playing fetch failed: \(error.localizedDescription)"
+        }
+    }
+
     func label(for command: RemoteCommand, value: Int?) -> String {
         switch command {
         case .previousTrack:
@@ -89,6 +133,10 @@ final class CommandSender: ObservableObject {
 
     private func healthURL(from input: String) -> URL? {
         normalizedBaseURL(from: input)?.appendingPathComponent("api/health")
+    }
+
+    private func nowPlayingURL(from input: String) -> URL? {
+        normalizedBaseURL(from: input)?.appendingPathComponent("api/now-playing")
     }
 
     private func normalizedBaseURL(from input: String) -> URL? {
