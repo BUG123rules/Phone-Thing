@@ -1,11 +1,15 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @AppStorage("serverHost") private var serverHost = ""
     @StateObject private var sender = CommandSender()
+    @State private var haptics = UISelectionFeedbackGenerator()
+    @State private var lastHapticVolume = -1
+    @State private var volumeSendTask: Task<Void, Never>?
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
 
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
@@ -15,23 +19,23 @@ struct ContentView: View {
                     let sideSpacing = max(14, geometry.size.width * 0.035)
                     let coverSize = min(
                         max(geometry.size.width - (horizontalPadding * 2) - (sideButtonSize * 2) - (sideSpacing * 2), 140),
-                        geometry.size.height * 0.40,
+                        geometry.size.height * 0.38,
                         320
                     )
 
                     VStack(spacing: 0) {
-                        Spacer(minLength: 24)
+                        Spacer(minLength: 42)
 
                         artworkRow(size: coverSize, buttonSize: sideButtonSize, spacing: sideSpacing)
 
                         VStack(spacing: 10) {
-                            Text(currentTitle)
+                            Text(sender.trackTitle)
                                 .font(.system(size: 28, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.white)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
 
-                            Text(currentArtist)
+                            Text(sender.trackArtist)
                                 .font(.system(size: 17, weight: .medium, design: .rounded))
                                 .foregroundStyle(Color.white.opacity(0.58))
                                 .lineLimit(1)
@@ -40,7 +44,7 @@ struct ContentView: View {
                         .padding(.top, 28)
 
                         progressSection(at: context.date)
-                            .padding(.top, 24)
+                            .padding(.top, 26)
 
                         Spacer(minLength: 18)
 
@@ -51,11 +55,21 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+
+            volumeBar
+                .padding(.top, 18)
+                .padding(.trailing, 16)
         }
         .preferredColorScheme(.dark)
         .task(id: serverHost) {
-            sender.stopPolling()
-            await sender.startPolling(host: serverHost)
+            await sender.startListening(host: serverHost)
+        }
+        .onAppear {
+            haptics.prepare()
+        }
+        .onDisappear {
+            sender.stopListening()
+            volumeSendTask?.cancel()
         }
     }
 
@@ -79,24 +93,27 @@ struct ContentView: View {
                 await sender.send(command: .playPause, to: serverHost)
             }
         } label: {
-            Group {
-                if let url = sender.artworkURL {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        case .failure(_):
-                            placeholderCover
-                        case .empty:
-                            placeholderCover
-                        @unknown default:
-                            placeholderCover
-                        }
+            ZStack {
+                Group {
+                    if let image = sender.artworkImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        placeholderCover
                     }
-                } else {
-                    placeholderCover
+                }
+
+                if !sender.isPlaying {
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.58))
+                            .frame(width: size * 0.26, height: size * 0.26)
+
+                        Image(systemName: "pause.fill")
+                            .font(.system(size: size * 0.09, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
                 }
             }
         }
@@ -121,9 +138,11 @@ struct ContentView: View {
     }
 
     private func progressSection(at now: Date) -> some View {
-        let fraction = progressFraction(at: now)
+        let duration = sender.durationSeconds
+        let currentPosition = sender.currentPosition(at: now)
+        let fraction = duration > 0 ? min(max(currentPosition / duration, 0), 1) : 0
 
-        VStack(spacing: 10) {
+        return VStack(spacing: 10) {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -138,13 +157,55 @@ struct ContentView: View {
             .frame(height: 4)
 
             HStack {
-                Text(formattedElapsed(at: now))
+                Text(formatTime(currentPosition))
                 Spacer()
-                Text(formattedRemaining(at: now))
+                Text(formatTime(duration))
             }
             .font(.system(size: 13, weight: .medium, design: .monospaced))
             .foregroundStyle(Color.white.opacity(0.46))
         }
+    }
+
+    private var volumeBar: some View {
+        GeometryReader { geometry in
+            let barHeight = min(max(geometry.size.height * 0.22, 148), 188)
+            let pillHeight = max(barHeight * CGFloat(sender.volumePercent / 100.0), 18)
+
+            VStack(spacing: 12) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.82))
+
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white)
+                        .frame(height: pillHeight)
+                }
+                .frame(width: 38, height: barHeight)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let clampedY = min(max(value.location.y, 0), barHeight)
+                            let percent = (1 - (clampedY / barHeight)) * 100
+                            updateVolume(to: percent)
+                        }
+                )
+
+                Text("\(Int(sender.volumePercent.rounded()))")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.44))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
+            .background(Color.white.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
+        .frame(width: 72, height: 240)
     }
 
     private var connectionSection: some View {
@@ -190,51 +251,22 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
-    private var currentTitle: String {
-        guard let status = sender.nowPlaying, status.isAvailable else {
-            return "Nothing Playing"
+    private func updateVolume(to proposedValue: Double) {
+        let clampedValue = min(max(proposedValue, 0), 100)
+        let roundedValue = Int(clampedValue.rounded())
+
+        sender.volumePercent = Double(roundedValue)
+
+        if roundedValue != lastHapticVolume {
+            lastHapticVolume = roundedValue
+            haptics.selectionChanged()
+            haptics.prepare()
         }
 
-        return status.title
-    }
-
-    private var currentArtist: String {
-        guard let status = sender.nowPlaying, status.isAvailable else {
-            return "Play media on your PC"
+        volumeSendTask?.cancel()
+        volumeSendTask = Task {
+            await sender.send(command: .setVolume, value: roundedValue, to: serverHost)
         }
-
-        return status.artist.isEmpty ? "Unknown Artist" : status.artist
-    }
-
-    private func progressFraction(at now: Date) -> CGFloat {
-        guard let status = sender.nowPlaying, status.durationSeconds > 0 else {
-            return 0
-        }
-
-        return min(max(CGFloat(currentPositionSeconds(at: now) / status.durationSeconds), 0), 1)
-    }
-
-    private func formattedElapsed(at now: Date) -> String {
-        formatTime(currentPositionSeconds(at: now))
-    }
-
-    private func formattedRemaining(at now: Date) -> String {
-        let duration = sender.nowPlaying?.durationSeconds ?? 0
-        let remaining = max(duration - currentPositionSeconds(at: now), 0)
-        return "-\(formatTime(remaining))"
-    }
-
-    private func currentPositionSeconds(at now: Date) -> Double {
-        guard let status = sender.nowPlaying else {
-            return 0
-        }
-
-        if !status.isPlaying {
-            return min(max(status.positionSeconds, 0), status.durationSeconds)
-        }
-
-        let elapsedSinceSync = now.timeIntervalSince1970 - (Double(status.syncUnixMilliseconds) / 1000.0)
-        return min(max(status.positionSeconds + elapsedSinceSync, 0), status.durationSeconds)
     }
 
     private func formatTime(_ value: Double) -> String {

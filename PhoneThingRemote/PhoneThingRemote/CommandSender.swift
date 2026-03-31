@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum RemoteCommand: String {
     case previousTrack
@@ -12,25 +13,33 @@ struct CommandPayload: Encodable {
     let value: Int?
 }
 
-struct NowPlayingStatus: Decodable, Equatable {
-    let isAvailable: Bool
-    let title: String
-    let artist: String
-    let sourceAppId: String
-    let isPlaying: Bool
-    let positionSeconds: Double
-    let durationSeconds: Double
-    let syncUnixMilliseconds: Int64
-    let artworkRevision: String
+private struct RemoteEventPacket: Decodable {
+    let type: String
+    let title: String?
+    let artist: String?
+    let artworkBase64: String?
+    let artworkContentType: String?
+    let changedAtUnixMilliseconds: Int64?
+    let totalRuntimeSeconds: Double?
+    let isPlaying: Bool?
+    let positionSeconds: Double?
+    let volumePercent: Int?
 }
 
 @MainActor
 final class CommandSender: ObservableObject {
     @Published var statusMessage: String = "Ready"
-    @Published var nowPlaying: NowPlayingStatus?
-    @Published var artworkURL: URL?
+    @Published var trackTitle: String = "Nothing Playing"
+    @Published var trackArtist: String = "Play media on your PC"
+    @Published var artworkImage: UIImage?
+    @Published var isPlaying: Bool = false
+    @Published var durationSeconds: Double = 0
+    @Published var volumePercent: Double = 50
 
-    private var isPolling = false
+    private var progressAnchorSeconds: Double = 0
+    private var progressAnchorDate: Date = .now
+    private var listeningTask: Task<Void, Never>?
+    private var reconnectDelayNanoseconds: UInt64 = 750_000_000
 
     func send(command: RemoteCommand, value: Int? = nil, to host: String) async {
         guard let url = commandURL(from: host) else {
@@ -45,43 +54,66 @@ final class CommandSender: ObservableObject {
 
         do {
             request.httpBody = try JSONEncoder().encode(CommandPayload(command: command.rawValue, value: value))
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await URLSession.shared.data(for: request)
 
             if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
                 statusMessage = "Connected"
-                await refreshStatus(from: host, silent: true)
             } else {
-                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                let body = String(data: data, encoding: .utf8) ?? "No response body"
-                statusMessage = "PC error \(code): \(body)"
+                statusMessage = "PC command failed"
             }
         } catch {
             statusMessage = "Connection failed"
         }
     }
 
-    func startPolling(host: String) async {
+    func startListening(host: String) async {
+        stopListening()
+
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedHost.isEmpty else {
+            statusMessage = "Enter your PC IP."
             return
         }
 
-        isPolling = true
-        await refreshStatus(from: trimmedHost, silent: true)
+        let reconnectDelayNanoseconds = reconnectDelayNanoseconds
+        listeningTask = Task { [weak self] in
+            guard let self else { return }
 
-        while isPolling && !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            await refreshStatus(from: trimmedHost, silent: true)
+            while !Task.isCancelled {
+                do {
+                    try await self.listenToEvents(host: trimmedHost)
+                } catch {
+                    await MainActor.run {
+                        self.statusMessage = "Reconnecting..."
+                    }
+                }
+
+                if Task.isCancelled {
+                    break
+                }
+
+                try? await Task.sleep(nanoseconds: reconnectDelayNanoseconds)
+            }
         }
     }
 
-    func stopPolling() {
-        isPolling = false
+    func stopListening() {
+        listeningTask?.cancel()
+        listeningTask = nil
     }
 
-    private func refreshStatus(from host: String, silent: Bool) async {
-        guard let url = statusURL(from: host) else {
-            if !silent {
+    func currentPosition(at now: Date) -> Double {
+        if !isPlaying {
+            return min(max(progressAnchorSeconds, 0), durationSeconds)
+        }
+
+        let elapsed = now.timeIntervalSince(progressAnchorDate)
+        return min(max(progressAnchorSeconds + elapsed, 0), durationSeconds)
+    }
+
+    private func listenToEvents(host: String) async throws {
+        guard let url = eventsURL(from: host) else {
+            await MainActor.run {
                 statusMessage = "Enter your PC IP."
             }
             return
@@ -89,53 +121,117 @@ final class CommandSender: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.timeoutInterval = 1.5
+        request.timeoutInterval = 60 * 60 * 24
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                if !silent {
-                    statusMessage = "Status update failed"
-                }
-                return
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        await MainActor.run {
+            statusMessage = "Connected"
+        }
+
+        for try await line in bytes.lines {
+            if Task.isCancelled {
+                break
             }
 
-            let status = try JSONDecoder().decode(NowPlayingStatus.self, from: data)
-            let previousRevision = nowPlaying?.artworkRevision ?? ""
-            nowPlaying = status
-
-            if status.artworkRevision != previousRevision {
-                artworkURL = artworkURL(from: host, revision: status.artworkRevision)
+            guard line.hasPrefix("data: ") else {
+                continue
             }
 
-            if !silent {
-                statusMessage = "Connected"
+            let payload = String(line.dropFirst(6))
+            guard let data = payload.data(using: .utf8) else {
+                continue
             }
-        } catch {
-            if !silent {
-                statusMessage = "Status update failed"
+
+            let packet = try JSONDecoder().decode(RemoteEventPacket.self, from: data)
+            await MainActor.run {
+                self.apply(packet: packet)
             }
         }
+    }
+
+    private func apply(packet: RemoteEventPacket) {
+        switch packet.type {
+        case "songChanged":
+            applySongChanged(packet)
+        case "playbackChanged":
+            applyPlaybackChanged(packet)
+        case "volumeChanged":
+            if let volume = packet.volumePercent {
+                volumePercent = Double(volume)
+            }
+        default:
+            break
+        }
+    }
+
+    private func applySongChanged(_ packet: RemoteEventPacket) {
+        if let title = packet.title, !title.isEmpty {
+            trackTitle = title
+        } else {
+            trackTitle = "Nothing Playing"
+        }
+
+        if let artist = packet.artist, !artist.isEmpty {
+            trackArtist = artist
+        } else {
+            trackArtist = "Play media on your PC"
+        }
+        durationSeconds = max(packet.totalRuntimeSeconds ?? 0, 0)
+        isPlaying = packet.isPlaying ?? false
+
+        if
+            let base64 = packet.artworkBase64,
+            !base64.isEmpty,
+            let data = Data(base64Encoded: base64),
+            let image = UIImage(data: data)
+        {
+            artworkImage = image
+        } else {
+            artworkImage = nil
+        }
+
+        let changedAt = packet.changedAtUnixMilliseconds.map {
+            Date(timeIntervalSince1970: Double($0) / 1000.0)
+        } ?? .now
+
+        let positionFromClock = max(Date().timeIntervalSince(changedAt), 0)
+        let packetPosition = max(packet.positionSeconds ?? 0, 0)
+        let resolvedPosition = isPlaying ? max(positionFromClock, packetPosition) : packetPosition
+        syncProgress(isPlaying: isPlaying, positionSeconds: resolvedPosition, changedAt: .now)
+    }
+
+    private func applyPlaybackChanged(_ packet: RemoteEventPacket) {
+        let playing = packet.isPlaying ?? false
+        let position = max(packet.positionSeconds ?? 0, 0)
+        let changedAt = packet.changedAtUnixMilliseconds.map {
+            Date(timeIntervalSince1970: Double($0) / 1000.0)
+        } ?? .now
+
+        syncProgress(isPlaying: playing, positionSeconds: position, changedAt: changedAt)
+    }
+
+    private func syncProgress(isPlaying: Bool, positionSeconds: Double, changedAt: Date) {
+        let now = Date()
+        let resolvedPosition = isPlaying
+            ? positionSeconds + max(now.timeIntervalSince(changedAt), 0)
+            : positionSeconds
+
+        self.isPlaying = isPlaying
+        progressAnchorSeconds = min(max(resolvedPosition, 0), durationSeconds)
+        progressAnchorDate = now
     }
 
     private func commandURL(from input: String) -> URL? {
         normalizedBaseURL(from: input)?.appendingPathComponent("api/commands")
     }
 
-    private func statusURL(from input: String) -> URL? {
-        normalizedBaseURL(from: input)?.appendingPathComponent("api/now-playing/status")
-    }
-
-    private func artworkURL(from input: String, revision: String) -> URL? {
-        guard !revision.isEmpty else {
-            return nil
-        }
-
-        return normalizedBaseURL(from: input)?
-            .appendingPathComponent("api")
-            .appendingPathComponent("now-playing")
-            .appendingPathComponent("artwork")
-            .appendingPathComponent(revision)
+    private func eventsURL(from input: String) -> URL? {
+        normalizedBaseURL(from: input)?.appendingPathComponent("api/events")
     }
 
     private func normalizedBaseURL(from input: String) -> URL? {
