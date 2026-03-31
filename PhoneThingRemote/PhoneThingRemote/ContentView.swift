@@ -74,10 +74,14 @@ struct ContentView: View {
         }
         .task {
             savedHosts = initialHosts()
+            OrientationController.shared.apply(layoutOrientation: sender.layout.orientation)
         }
         .task(id: savedHosts.map { $0.address }.joined(separator: "|")) {
             saveHosts(savedHosts)
             await sender.startListening(hosts: savedHosts.map { $0.address })
+        }
+        .onChange(of: sender.layout.orientation) { newOrientation in
+            OrientationController.shared.apply(layoutOrientation: newOrientation)
         }
         .onAppear {
             haptics.prepare()

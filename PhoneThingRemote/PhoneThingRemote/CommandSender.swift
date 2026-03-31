@@ -34,19 +34,23 @@ private struct HealthResponse: Decodable {
 }
 
 struct PhoneLayout: Decodable {
+    let orientation: String
     let elements: [PhoneLayoutElement]
 
-    static let `default` = PhoneLayout(elements: [
-        PhoneLayoutElement(key: "volumeBar", x: 0.06, y: 0.05, width: 0.34, height: 0.04, isVisible: true),
-        PhoneLayoutElement(key: "settingsButton", x: 0.87, y: 0.05, width: 0.09, height: 0.05, isVisible: true),
-        PhoneLayoutElement(key: "previousButton", x: 0.08, y: 0.32, width: 0.12, height: 0.08, isVisible: true),
-        PhoneLayoutElement(key: "albumArt", x: 0.24, y: 0.22, width: 0.52, height: 0.27, isVisible: true),
-        PhoneLayoutElement(key: "nextButton", x: 0.80, y: 0.32, width: 0.12, height: 0.08, isVisible: true),
-        PhoneLayoutElement(key: "title", x: 0.12, y: 0.55, width: 0.76, height: 0.07, isVisible: true),
-        PhoneLayoutElement(key: "artist", x: 0.18, y: 0.62, width: 0.64, height: 0.04, isVisible: true),
-        PhoneLayoutElement(key: "progressBar", x: 0.12, y: 0.71, width: 0.76, height: 0.06, isVisible: true),
-        PhoneLayoutElement(key: "statusFooter", x: 0.08, y: 0.93, width: 0.84, height: 0.03, isVisible: true)
-    ])
+    static let `default` = PhoneLayout(
+        orientation: "landscape",
+        elements: [
+            PhoneLayoutElement(key: "volumeBar", x: 0.05, y: 0.06, width: 0.26, height: 0.06, isVisible: true),
+            PhoneLayoutElement(key: "settingsButton", x: 0.90, y: 0.05, width: 0.06, height: 0.08, isVisible: true),
+            PhoneLayoutElement(key: "previousButton", x: 0.08, y: 0.36, width: 0.09, height: 0.13, isVisible: true),
+            PhoneLayoutElement(key: "albumArt", x: 0.24, y: 0.20, width: 0.52, height: 0.46, isVisible: true),
+            PhoneLayoutElement(key: "nextButton", x: 0.83, y: 0.36, width: 0.09, height: 0.13, isVisible: true),
+            PhoneLayoutElement(key: "title", x: 0.22, y: 0.70, width: 0.56, height: 0.09, isVisible: true),
+            PhoneLayoutElement(key: "artist", x: 0.26, y: 0.80, width: 0.48, height: 0.05, isVisible: true),
+            PhoneLayoutElement(key: "progressBar", x: 0.20, y: 0.88, width: 0.60, height: 0.08, isVisible: true),
+            PhoneLayoutElement(key: "statusFooter", x: 0.04, y: 0.96, width: 0.92, height: 0.03, isVisible: true)
+        ]
+    )
 
     func element(for key: String) -> PhoneLayoutElement? {
         elements.first { $0.key == key }
