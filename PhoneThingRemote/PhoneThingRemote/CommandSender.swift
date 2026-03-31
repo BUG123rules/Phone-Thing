@@ -25,11 +25,41 @@ private struct RemoteEventPacket: Decodable {
     let isPlaying: Bool?
     let positionSeconds: Double?
     let volumePercent: Int?
+    let layout: PhoneLayout?
 }
 
 private struct HealthResponse: Decodable {
     let ok: Bool
     let port: Int
+}
+
+struct PhoneLayout: Decodable {
+    let elements: [PhoneLayoutElement]
+
+    static let `default` = PhoneLayout(elements: [
+        PhoneLayoutElement(key: "volumeBar", x: 0.06, y: 0.05, width: 0.34, height: 0.04, isVisible: true),
+        PhoneLayoutElement(key: "settingsButton", x: 0.87, y: 0.05, width: 0.09, height: 0.05, isVisible: true),
+        PhoneLayoutElement(key: "previousButton", x: 0.08, y: 0.32, width: 0.12, height: 0.08, isVisible: true),
+        PhoneLayoutElement(key: "albumArt", x: 0.24, y: 0.22, width: 0.52, height: 0.27, isVisible: true),
+        PhoneLayoutElement(key: "nextButton", x: 0.80, y: 0.32, width: 0.12, height: 0.08, isVisible: true),
+        PhoneLayoutElement(key: "title", x: 0.12, y: 0.55, width: 0.76, height: 0.07, isVisible: true),
+        PhoneLayoutElement(key: "artist", x: 0.18, y: 0.62, width: 0.64, height: 0.04, isVisible: true),
+        PhoneLayoutElement(key: "progressBar", x: 0.12, y: 0.71, width: 0.76, height: 0.06, isVisible: true),
+        PhoneLayoutElement(key: "statusFooter", x: 0.08, y: 0.93, width: 0.84, height: 0.03, isVisible: true)
+    ])
+
+    func element(for key: String) -> PhoneLayoutElement? {
+        elements.first { $0.key == key }
+    }
+}
+
+struct PhoneLayoutElement: Decodable {
+    let key: String
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let isVisible: Bool
 }
 
 @MainActor
@@ -42,6 +72,7 @@ final class CommandSender: ObservableObject {
     @Published var durationSeconds: Double = 0
     @Published var volumePercent: Double = 50
     @Published var activeHost: String = ""
+    @Published var layout: PhoneLayout = .default
 
     private var progressAnchorSeconds: Double = 0
     private var progressAnchorDate: Date = .now
@@ -191,6 +222,10 @@ final class CommandSender: ObservableObject {
         case "volumeChanged":
             if let volume = packet.volumePercent {
                 volumePercent = Double(volume)
+            }
+        case "layoutChanged":
+            if let layout = packet.layout {
+                self.layout = layout
             }
         default:
             break

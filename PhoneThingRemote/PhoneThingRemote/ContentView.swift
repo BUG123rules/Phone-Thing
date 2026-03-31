@@ -20,47 +20,43 @@ struct ContentView: View {
 
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
                 GeometryReader { geometry in
-                    let horizontalPadding = max(24, geometry.size.width * 0.08)
-                    let sideButtonSize = min(max(geometry.size.width * 0.14, 50), 62)
-                    let sideSpacing = max(14, geometry.size.width * 0.035)
-                    let coverSize = min(
-                        max(geometry.size.width - (horizontalPadding * 2) - (sideButtonSize * 2) - (sideSpacing * 2), 140),
-                        geometry.size.height * 0.35,
-                        320
-                    )
-
-                    VStack(spacing: 0) {
-                        topBar
-                            .padding(.top, 14)
-
-                        Spacer(minLength: 18)
-
-                        artworkRow(size: coverSize, buttonSize: sideButtonSize, spacing: sideSpacing)
-
-                        VStack(spacing: 10) {
-                            Text(sender.trackTitle)
-                                .font(.system(size: 28, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.white)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-
-                            Text(sender.trackArtist)
-                                .font(.system(size: 17, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.58))
-                                .lineLimit(1)
-                                .multilineTextAlignment(.center)
+                    ZStack(alignment: .topLeading) {
+                        elementFrame("volumeBar", in: geometry.size).map { rect in
+                            AnyView(volumeBar(baseRect: rect))
                         }
-                        .padding(.top, 28)
 
-                        progressSection(at: context.date)
-                            .padding(.top, 26)
+                        elementFrame("settingsButton", in: geometry.size).map { rect in
+                            AnyView(settingsButton(in: rect))
+                        }
 
-                        Spacer(minLength: 18)
+                        elementFrame("previousButton", in: geometry.size).map { rect in
+                            AnyView(skipButton(icon: "backward.fill", command: .previousTrack, in: rect))
+                        }
 
-                        statusFooter
+                        elementFrame("albumArt", in: geometry.size).map { rect in
+                            AnyView(coverArt(in: rect))
+                        }
+
+                        elementFrame("nextButton", in: geometry.size).map { rect in
+                            AnyView(skipButton(icon: "forward.fill", command: .nextTrack, in: rect))
+                        }
+
+                        elementFrame("title", in: geometry.size).map { rect in
+                            AnyView(titleView(in: rect))
+                        }
+
+                        elementFrame("artist", in: geometry.size).map { rect in
+                            AnyView(artistView(in: rect))
+                        }
+
+                        elementFrame("progressBar", in: geometry.size).map { rect in
+                            AnyView(progressSection(at: context.date, in: rect))
+                        }
+
+                        elementFrame("statusFooter", in: geometry.size).map { rect in
+                            AnyView(statusFooter(in: rect))
+                        }
                     }
-                    .padding(.horizontal, horizontalPadding)
-                    .padding(.vertical, 20)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -93,32 +89,136 @@ struct ContentView: View {
         }
     }
 
-    private var topBar: some View {
-        HStack(alignment: .top, spacing: 12) {
-            expandingVolumeBar
-            Spacer(minLength: 0)
-
-            Button {
-                isShowingSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Color.white.opacity(0.06))
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    )
+    private func coverArt(in rect: CGRect) -> some View {
+        Button {
+            Task {
+                await sender.send(command: .playPause)
             }
-            .buttonStyle(.plain)
+        } label: {
+            ZStack {
+                Group {
+                    if let image = sender.artworkImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        placeholderCover
+                    }
+                }
+
+                if !sender.isPlaying {
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.58))
+                            .frame(width: rect.width * 0.26, height: rect.width * 0.26)
+
+                        Image(systemName: "pause.fill")
+                            .font(.system(size: rect.width * 0.09, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+        }
+        .frame(width: rect.width, height: rect.height)
+        .clipShape(RoundedRectangle(cornerRadius: min(rect.width, rect.height) * 0.10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: min(rect.width, rect.height) * 0.10, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .buttonStyle(.plain)
+        .position(x: rect.midX, y: rect.midY)
+    }
+
+    private var placeholderCover: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.white.opacity(0.045))
+
+            Image(systemName: "music.note")
+                .font(.system(size: 56, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.24))
         }
     }
 
-    private var expandingVolumeBar: some View {
-        let width = isVolumeExpanded ? 230.0 : 112.0
-        let height = isVolumeExpanded ? 44.0 : 30.0
+    private func skipButton(icon: String, command: RemoteCommand, in rect: CGRect) -> some View {
+        let size = min(rect.width, rect.height)
+
+        return Button {
+            Task {
+                await sender.send(command: command)
+            }
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: size * 0.34, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(Color.white.opacity(0.07))
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .frame(width: rect.width, height: rect.height)
+        .position(x: rect.midX, y: rect.midY)
+    }
+
+    private func titleView(in rect: CGRect) -> some View {
+        Text(sender.trackTitle)
+            .font(.system(size: min(rect.height * 0.48, 34), weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+    }
+
+    private func artistView(in rect: CGRect) -> some View {
+        Text(sender.trackArtist)
+            .font(.system(size: min(rect.height * 0.52, 20), weight: .medium, design: .rounded))
+            .foregroundStyle(Color.white.opacity(0.58))
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+    }
+
+    private func progressSection(at now: Date, in rect: CGRect) -> some View {
+        let duration = sender.durationSeconds
+        let currentPosition = sender.currentPosition(at: now)
+        let fraction = duration > 0 ? min(max(currentPosition / duration, 0), 1) : 0
+
+        return VStack(spacing: max(rect.height * 0.16, 8)) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: max(rect.height * 0.12, 4))
+
+                    Capsule()
+                        .fill(Color.white)
+                        .frame(width: max(proxy.size.width * fraction, fraction > 0 ? 8 : 0), height: max(rect.height * 0.12, 4))
+                }
+            }
+            .frame(height: max(rect.height * 0.18, 6))
+
+            HStack {
+                Text(formatTime(currentPosition))
+                Spacer()
+                Text(formatTime(duration))
+            }
+            .font(.system(size: min(rect.height * 0.24, 14), weight: .medium, design: .monospaced))
+            .foregroundStyle(Color.white.opacity(0.46))
+        }
+        .frame(width: rect.width, height: rect.height)
+        .position(x: rect.midX, y: rect.midY)
+    }
+
+    private func volumeBar(baseRect: CGRect) -> some View {
+        let expandedWidth = isVolumeExpanded ? max(baseRect.width * 1.9, 180) : baseRect.width
+        let expandedHeight = isVolumeExpanded ? max(baseRect.height * 1.35, 34) : max(baseRect.height, 24)
+        let displayRect = CGRect(x: baseRect.minX, y: baseRect.minY, width: expandedWidth, height: expandedHeight)
 
         return HStack(spacing: isVolumeExpanded ? 10 : 8) {
             Image(systemName: "speaker.wave.2.fill")
@@ -147,17 +247,17 @@ struct ContentView: View {
                         }
                 )
             }
-            .frame(height: isVolumeExpanded ? 16 : 10)
+            .frame(height: isVolumeExpanded ? max(displayRect.height * 0.34, 14) : max(displayRect.height * 0.22, 8))
 
             if isVolumeExpanded {
                 Text("\(Int(sender.volumePercent.rounded()))")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: min(displayRect.height * 0.34, 12), weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.white.opacity(0.68))
                     .transition(.opacity)
             }
         }
         .padding(.horizontal, isVolumeExpanded ? 14 : 12)
-        .frame(width: width, height: height)
+        .frame(width: displayRect.width, height: displayRect.height, alignment: .leading)
         .background(Color.white.opacity(0.045))
         .clipShape(Capsule())
         .overlay(
@@ -165,102 +265,32 @@ struct ContentView: View {
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
         .animation(.spring(response: 0.28, dampingFraction: 0.84), value: isVolumeExpanded)
+        .position(x: displayRect.midX, y: displayRect.midY)
     }
 
-    private func artworkRow(size: CGFloat, buttonSize: CGFloat, spacing: CGFloat) -> some View {
-        HStack(spacing: spacing) {
-            transportButton(icon: "backward.fill", size: buttonSize) {
-                await sender.send(command: .previousTrack)
-            }
+    private func settingsButton(in rect: CGRect) -> some View {
+        let size = min(rect.width, rect.height)
 
-            coverArt(size: size)
-
-            transportButton(icon: "forward.fill", size: buttonSize) {
-                await sender.send(command: .nextTrack)
-            }
-        }
-    }
-
-    private func coverArt(size: CGFloat) -> some View {
-        Button {
-            Task {
-                await sender.send(command: .playPause)
-            }
+        return Button {
+            isShowingSettings = true
         } label: {
-            ZStack {
-                Group {
-                    if let image = sender.artworkImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } else {
-                        placeholderCover
-                    }
-                }
-
-                if !sender.isPlaying {
-                    ZStack {
-                        Circle()
-                            .fill(Color.black.opacity(0.58))
-                            .frame(width: size * 0.26, height: size * 0.26)
-
-                        Image(systemName: "pause.fill")
-                            .font(.system(size: size * 0.09, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                }
-            }
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: size * 0.38, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
         .buttonStyle(.plain)
+        .frame(width: rect.width, height: rect.height)
+        .position(x: rect.midX, y: rect.midY)
     }
 
-    private var placeholderCover: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.white.opacity(0.045))
-
-            Image(systemName: "music.note")
-                .font(.system(size: 56, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.24))
-        }
-    }
-
-    private func progressSection(at now: Date) -> some View {
-        let duration = sender.durationSeconds
-        let currentPosition = sender.currentPosition(at: now)
-        let fraction = duration > 0 ? min(max(currentPosition / duration, 0), 1) : 0
-
-        return VStack(spacing: 10) {
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(height: 4)
-
-                    Capsule()
-                        .fill(Color.white)
-                        .frame(width: max(proxy.size.width * fraction, fraction > 0 ? 8 : 0), height: 4)
-                }
-            }
-            .frame(height: 4)
-
-            HStack {
-                Text(formatTime(currentPosition))
-                Spacer()
-                Text(formatTime(duration))
-            }
-            .font(.system(size: 13, weight: .medium, design: .monospaced))
-            .foregroundStyle(Color.white.opacity(0.46))
-        }
-    }
-
-    private var statusFooter: some View {
+    private func statusFooter(in rect: CGRect) -> some View {
         HStack {
             if sender.activeHost.isEmpty {
                 Text(sender.statusMessage)
@@ -272,28 +302,10 @@ struct ContentView: View {
 
             Text(AppVersion.current)
         }
-        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .font(.system(size: min(rect.height * 0.58, 11), weight: .medium, design: .rounded))
         .foregroundStyle(Color.white.opacity(0.28))
-    }
-
-    private func transportButton(icon: String, size: CGFloat, action: @escaping () async -> Void) -> some View {
-        Button {
-            Task {
-                await action()
-            }
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: size * 0.32, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(Color.white.opacity(0.07))
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
+        .frame(width: rect.width, height: rect.height)
+        .position(x: rect.midX, y: rect.midY)
     }
 
     private func updateVolume(to proposedValue: Double) {
@@ -364,6 +376,19 @@ struct ContentView: View {
         legacyServerHost = ""
         saveHosts(migratedHosts)
         return migratedHosts
+    }
+
+    private func elementFrame(_ key: String, in size: CGSize) -> CGRect? {
+        guard let element = sender.layout.element(for: key), element.isVisible else {
+            return nil
+        }
+
+        return CGRect(
+            x: size.width * element.x,
+            y: size.height * element.y,
+            width: size.width * element.width,
+            height: size.height * element.height
+        )
     }
 
     private func formatTime(_ value: Double) -> String {
