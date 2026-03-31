@@ -12,6 +12,7 @@
 		A10000000000000000000003 /* CommandSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* CommandSender.swift */; };
 		A10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* Assets.xcassets */; };
 		A10000000000000000000006 /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* AppVersion.swift */; };
+		A10000000000000000000007 /* ConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* ConnectionSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +23,7 @@
 		A10000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000016 /* AppVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersion.swift; sourceTree = "<group>"; };
+		A10000000000000000000017 /* ConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +52,7 @@
 				A10000000000000000000012 /* ContentView.swift */,
 				A10000000000000000000013 /* CommandSender.swift */,
 				A10000000000000000000016 /* AppVersion.swift */,
+				A10000000000000000000017 /* ConnectionSettingsView.swift */,
 				A10000000000000000000014 /* Assets.xcassets */,
 				A10000000000000000000015 /* Info.plist */,
 			);
@@ -137,6 +140,7 @@
 				A10000000000000000000002 /* ContentView.swift in Sources */,
 				A10000000000000000000003 /* CommandSender.swift in Sources */,
 				A10000000000000000000006 /* AppVersion.swift in Sources */,
+				A10000000000000000000007 /* ConnectionSettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
