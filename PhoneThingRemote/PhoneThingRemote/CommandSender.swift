@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Darwin
 
 enum RemoteCommand: String {
     case previousTrack
@@ -26,6 +27,11 @@ private struct RemoteEventPacket: Decodable {
     let volumePercent: Int?
 }
 
+private struct HealthResponse: Decodable {
+    let ok: Bool
+    let port: Int
+}
+
 @MainActor
 final class CommandSender: ObservableObject {
     @Published var statusMessage: String = "Ready"
@@ -35,15 +41,17 @@ final class CommandSender: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var durationSeconds: Double = 0
     @Published var volumePercent: Double = 50
+    @Published var activeHost: String = ""
 
     private var progressAnchorSeconds: Double = 0
     private var progressAnchorDate: Date = .now
     private var listeningTask: Task<Void, Never>?
-    private var reconnectDelayNanoseconds: UInt64 = 750_000_000
+    private let reconnectDelayNanoseconds: UInt64 = 900_000_000
 
-    func send(command: RemoteCommand, value: Int? = nil, to host: String) async {
-        guard let url = commandURL(from: host) else {
-            statusMessage = "Enter your PC IP."
+    func send(command: RemoteCommand, value: Int? = nil, to host: String? = nil) async {
+        let resolvedHost = (host ?? activeHost).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = commandURL(from: resolvedHost) else {
+            statusMessage = "No connected PC"
             return
         }
 
@@ -57,7 +65,7 @@ final class CommandSender: ObservableObject {
             let (_, response) = try await URLSession.shared.data(for: request)
 
             if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
-                statusMessage = "Connected"
+                statusMessage = activeHost.isEmpty ? "Connected" : "Connected to \(activeHost)"
             } else {
                 statusMessage = "PC command failed"
             }
@@ -66,12 +74,13 @@ final class CommandSender: ObservableObject {
         }
     }
 
-    func startListening(host: String) async {
+    func startListening(hosts: [String]) async {
         stopListening()
 
-        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty else {
-            statusMessage = "Enter your PC IP."
+        let candidates = sanitizeHosts(hosts)
+        guard !candidates.isEmpty else {
+            activeHost = ""
+            statusMessage = "Add a PC in Settings"
             return
         }
 
@@ -80,8 +89,23 @@ final class CommandSender: ObservableObject {
             guard let self else { return }
 
             while !Task.isCancelled {
+                guard let host = await HostDiscovery.firstReachableHost(in: candidates) else {
+                    await MainActor.run {
+                        self.activeHost = ""
+                        self.statusMessage = "No saved PCs are reachable"
+                    }
+
+                    try? await Task.sleep(nanoseconds: reconnectDelayNanoseconds)
+                    continue
+                }
+
+                await MainActor.run {
+                    self.activeHost = host
+                    self.statusMessage = "Connected to \(host)"
+                }
+
                 do {
-                    try await self.listenToEvents(host: trimmedHost)
+                    try await self.listenToEvents(host: host)
                 } catch {
                     await MainActor.run {
                         self.statusMessage = "Reconnecting..."
@@ -111,10 +135,14 @@ final class CommandSender: ObservableObject {
         return min(max(progressAnchorSeconds + elapsed, 0), durationSeconds)
     }
 
+    func scanForServers() async -> [String] {
+        await HostDiscovery.scanForServers()
+    }
+
     private func listenToEvents(host: String) async throws {
         guard let url = eventsURL(from: host) else {
             await MainActor.run {
-                statusMessage = "Enter your PC IP."
+                statusMessage = "No connected PC"
             }
             return
         }
@@ -130,7 +158,7 @@ final class CommandSender: ObservableObject {
         }
 
         await MainActor.run {
-            statusMessage = "Connected"
+            self.statusMessage = "Connected to \(host)"
         }
 
         for try await line in bytes.lines {
@@ -170,17 +198,8 @@ final class CommandSender: ObservableObject {
     }
 
     private func applySongChanged(_ packet: RemoteEventPacket) {
-        if let title = packet.title, !title.isEmpty {
-            trackTitle = title
-        } else {
-            trackTitle = "Nothing Playing"
-        }
-
-        if let artist = packet.artist, !artist.isEmpty {
-            trackArtist = artist
-        } else {
-            trackArtist = "Play media on your PC"
-        }
+        trackTitle = (packet.title?.isEmpty == false ? packet.title : nil) ?? "Nothing Playing"
+        trackArtist = (packet.artist?.isEmpty == false ? packet.artist : nil) ?? "Play media on your PC"
         durationSeconds = max(packet.totalRuntimeSeconds ?? 0, 0)
         isPlaying = packet.isPlaying ?? false
 
@@ -224,6 +243,15 @@ final class CommandSender: ObservableObject {
         self.isPlaying = isPlaying
         progressAnchorSeconds = min(max(resolvedPosition, 0), durationSeconds)
         progressAnchorDate = now
+    }
+
+    private func sanitizeHosts(_ hosts: [String]) -> [String] {
+        var seen = Set<String>()
+
+        return hosts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { seen.insert($0.lowercased()).inserted }
     }
 
     private func commandURL(from input: String) -> URL? {
@@ -270,5 +298,151 @@ final class CommandSender: ObservableObject {
         components.host = trimmed
         components.port = 5050
         return components.url
+    }
+}
+
+private enum HostDiscovery {
+    static func firstReachableHost(in hosts: [String]) async -> String? {
+        for host in hosts {
+            if await isReachable(host: host) {
+                return host
+            }
+        }
+
+        return nil
+    }
+
+    static func scanForServers() async -> [String] {
+        guard let subnetPrefix = localIPv4Address()?.split(separator: ".").dropLast().joined(separator: ".") else {
+            return []
+        }
+
+        return await withTaskGroup(of: String?.self) { group in
+            for suffix in 1...254 {
+                let host = "\(subnetPrefix).\(suffix)"
+                group.addTask {
+                    await isReachable(host: host) ? host : nil
+                }
+            }
+
+            var foundHosts: [String] = []
+            for await host in group {
+                if let host {
+                    foundHosts.append(host)
+                }
+            }
+
+            return foundHosts.sorted { lhs, rhs in
+                let leftParts = lhs.split(separator: ".").compactMap { Int($0) }
+                let rightParts = rhs.split(separator: ".").compactMap { Int($0) }
+                return leftParts.lexicographicallyPrecedes(rightParts)
+            }
+        }
+    }
+
+    static func isReachable(host: String) async -> Bool {
+        guard let url = normalizedBaseURL(from: host)?.appendingPathComponent("api/health") else {
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 0.45
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                return false
+            }
+
+            let health = try JSONDecoder().decode(HealthResponse.self, from: data)
+            return health.ok && health.port == 5050
+        } catch {
+            return false
+        }
+    }
+
+    private static func normalizedBaseURL(from input: String) -> URL? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        if let explicitURL = URL(string: trimmed), explicitURL.scheme != nil {
+            guard var components = URLComponents(url: explicitURL, resolvingAgainstBaseURL: false) else {
+                return nil
+            }
+
+            components.scheme = components.scheme ?? "http"
+            components.port = components.port ?? 5050
+            components.path = ""
+            return components.url
+        }
+
+        if trimmed.contains(":") {
+            let parts = trimmed.split(separator: ":", maxSplits: 1).map(String.init)
+            guard let host = parts.first, !host.isEmpty else {
+                return nil
+            }
+
+            var components = URLComponents()
+            components.scheme = "http"
+            components.host = host
+            components.port = (parts.count > 1 ? Int(parts[1]) : nil) ?? 5050
+            return components.url
+        }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = trimmed
+        components.port = 5050
+        return components.url
+    }
+
+    private static func localIPv4Address() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+
+        guard getifaddrs(&ifaddr) == 0, let firstAddress = ifaddr else {
+            return nil
+        }
+
+        defer { freeifaddrs(ifaddr) }
+
+        for pointer in sequence(first: firstAddress, next: { $0.pointee.ifa_next }) {
+            let interface = pointer.pointee
+            guard let addressPointer = interface.ifa_addr else {
+                continue
+            }
+
+            let family = addressPointer.pointee.sa_family
+
+            guard family == UInt8(AF_INET) else {
+                continue
+            }
+
+            let name = String(cString: interface.ifa_name)
+            guard name == "en0" || name == "en1" || name == "bridge100" else {
+                continue
+            }
+
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let result = getnameinfo(
+                addressPointer,
+                socklen_t(addressPointer.pointee.sa_len),
+                &hostname,
+                socklen_t(hostname.count),
+                nil,
+                socklen_t(0),
+                NI_NUMERICHOST
+            )
+
+            if result == 0 {
+                address = String(cString: hostname)
+                break
+            }
+        }
+
+        return address
     }
 }

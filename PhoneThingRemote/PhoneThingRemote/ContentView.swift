@@ -2,14 +2,20 @@ import SwiftUI
 import UIKit
 
 struct ContentView: View {
-    @AppStorage("serverHost") private var serverHost = ""
+    @AppStorage("serverHosts") private var storedHostsData = ""
+    @AppStorage("serverHost") private var legacyServerHost = ""
+
     @StateObject private var sender = CommandSender()
     @State private var haptics = UISelectionFeedbackGenerator()
     @State private var lastHapticVolume = -1
     @State private var volumeSendTask: Task<Void, Never>?
+    @State private var volumeCollapseTask: Task<Void, Never>?
+    @State private var isVolumeExpanded = false
+    @State private var isShowingSettings = false
+    @State private var savedHosts: [SavedHost] = []
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
 
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
@@ -19,12 +25,15 @@ struct ContentView: View {
                     let sideSpacing = max(14, geometry.size.width * 0.035)
                     let coverSize = min(
                         max(geometry.size.width - (horizontalPadding * 2) - (sideButtonSize * 2) - (sideSpacing * 2), 140),
-                        geometry.size.height * 0.38,
+                        geometry.size.height * 0.35,
                         320
                     )
 
                     VStack(spacing: 0) {
-                        Spacer(minLength: 42)
+                        topBar
+                            .padding(.top, 14)
+
+                        Spacer(minLength: 18)
 
                         artworkRow(size: coverSize, buttonSize: sideButtonSize, spacing: sideSpacing)
 
@@ -48,21 +57,31 @@ struct ContentView: View {
 
                         Spacer(minLength: 18)
 
-                        connectionSection
+                        statusFooter
                     }
                     .padding(.horizontal, horizontalPadding)
                     .padding(.vertical, 20)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-
-            volumeBar
-                .padding(.top, 18)
-                .padding(.trailing, 16)
         }
         .preferredColorScheme(.dark)
-        .task(id: serverHost) {
-            await sender.startListening(host: serverHost)
+        .sheet(isPresented: $isShowingSettings) {
+            ConnectionSettingsView(
+                hosts: $savedHosts,
+                activeHost: sender.activeHost,
+                statusMessage: sender.statusMessage,
+                onScan: {
+                    await sender.scanForServers()
+                }
+            )
+        }
+        .task {
+            savedHosts = initialHosts()
+        }
+        .task(id: savedHosts.map(\.address).joined(separator: "|")) {
+            saveHosts(savedHosts)
+            await sender.startListening(hosts: savedHosts.map(\.address))
         }
         .onAppear {
             haptics.prepare()
@@ -70,19 +89,94 @@ struct ContentView: View {
         .onDisappear {
             sender.stopListening()
             volumeSendTask?.cancel()
+            volumeCollapseTask?.cancel()
         }
+    }
+
+    private var topBar: some View {
+        HStack(alignment: .top, spacing: 12) {
+            expandingVolumeBar
+            Spacer(minLength: 0)
+
+            Button {
+                isShowingSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.white.opacity(0.06))
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var expandingVolumeBar: some View {
+        let width = isVolumeExpanded ? 230.0 : 112.0
+        let height = isVolumeExpanded ? 44.0 : 30.0
+
+        return HStack(spacing: isVolumeExpanded ? 10 : 8) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: isVolumeExpanded ? 15 : 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9))
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.10))
+
+                    Capsule()
+                        .fill(Color.white)
+                        .frame(width: max((sender.volumePercent / 100.0) * proxy.size.width, 8))
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let percent = min(max(value.location.x / proxy.size.width, 0), 1) * 100
+                            updateVolume(to: percent)
+                            expandVolumeBar()
+                        }
+                        .onEnded { _ in
+                            scheduleVolumeCollapse()
+                        }
+                )
+            }
+            .frame(height: isVolumeExpanded ? 16 : 10)
+
+            if isVolumeExpanded {
+                Text("\(Int(sender.volumePercent.rounded()))")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.68))
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, isVolumeExpanded ? 14 : 12)
+        .frame(width: width, height: height)
+        .background(Color.white.opacity(0.045))
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .animation(.spring(response: 0.28, dampingFraction: 0.84), value: isVolumeExpanded)
     }
 
     private func artworkRow(size: CGFloat, buttonSize: CGFloat, spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
             transportButton(icon: "backward.fill", size: buttonSize) {
-                await sender.send(command: .previousTrack, to: serverHost)
+                await sender.send(command: .previousTrack)
             }
 
             coverArt(size: size)
 
             transportButton(icon: "forward.fill", size: buttonSize) {
-                await sender.send(command: .nextTrack, to: serverHost)
+                await sender.send(command: .nextTrack)
             }
         }
     }
@@ -90,7 +184,7 @@ struct ContentView: View {
     private func coverArt(size: CGFloat) -> some View {
         Button {
             Task {
-                await sender.send(command: .playPause, to: serverHost)
+                await sender.send(command: .playPause)
             }
         } label: {
             ZStack {
@@ -166,69 +260,20 @@ struct ContentView: View {
         }
     }
 
-    private var volumeBar: some View {
-        GeometryReader { geometry in
-            let barHeight = min(max(geometry.size.height * 0.22, 148), 188)
-            let pillHeight = max(barHeight * CGFloat(sender.volumePercent / 100.0), 18)
-
-            VStack(spacing: 12) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.82))
-
-                ZStack(alignment: .bottom) {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
-
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.white)
-                        .frame(height: pillHeight)
-                }
-                .frame(width: 38, height: barHeight)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            let clampedY = min(max(value.location.y, 0), barHeight)
-                            let percent = (1 - (clampedY / barHeight)) * 100
-                            updateVolume(to: percent)
-                        }
-                )
-
-                Text("\(Int(sender.volumePercent.rounded()))")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.44))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 14)
-            .background(Color.white.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        }
-        .frame(width: 72, height: 240)
-    }
-
-    private var connectionSection: some View {
-        VStack(spacing: 10) {
-            TextField("PC IP", text: $serverHost)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.decimalPad)
-                .submitLabel(.done)
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.72))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(Color.white.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-            HStack {
+    private var statusFooter: some View {
+        HStack {
+            if sender.activeHost.isEmpty {
                 Text(sender.statusMessage)
-                Spacer()
-                Text(AppVersion.current)
+            } else {
+                Text("\(sender.activeHost)  |  \(sender.statusMessage)")
             }
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundStyle(Color.white.opacity(0.28))
+
+            Spacer()
+
+            Text(AppVersion.current)
         }
+        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .foregroundStyle(Color.white.opacity(0.28))
     }
 
     private func transportButton(icon: String, size: CGFloat, action: @escaping () async -> Void) -> some View {
@@ -265,8 +310,60 @@ struct ContentView: View {
 
         volumeSendTask?.cancel()
         volumeSendTask = Task {
-            await sender.send(command: .setVolume, value: roundedValue, to: serverHost)
+            await sender.send(command: .setVolume, value: roundedValue)
         }
+    }
+
+    private func expandVolumeBar() {
+        if !isVolumeExpanded {
+            isVolumeExpanded = true
+        }
+    }
+
+    private func scheduleVolumeCollapse() {
+        volumeCollapseTask?.cancel()
+        volumeCollapseTask = Task {
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
+
+            if !Task.isCancelled {
+                await MainActor.run {
+                    isVolumeExpanded = false
+                }
+            }
+        }
+    }
+
+    private func loadHosts() -> [SavedHost] {
+        guard let data = storedHostsData.data(using: .utf8) else {
+            return []
+        }
+
+        return (try? JSONDecoder().decode([SavedHost].self, from: data)) ?? []
+    }
+
+    private func saveHosts(_ hosts: [SavedHost]) {
+        guard let data = try? JSONEncoder().encode(hosts), let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        storedHostsData = json
+    }
+
+    private func initialHosts() -> [SavedHost] {
+        let decodedHosts = loadHosts()
+        guard decodedHosts.isEmpty else {
+            return decodedHosts
+        }
+
+        let trimmedLegacyHost = legacyServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLegacyHost.isEmpty else {
+            return []
+        }
+
+        let migratedHosts = [SavedHost(address: trimmedLegacyHost)]
+        legacyServerHost = ""
+        saveHosts(migratedHosts)
+        return migratedHosts
     }
 
     private func formatTime(_ value: Double) -> String {
