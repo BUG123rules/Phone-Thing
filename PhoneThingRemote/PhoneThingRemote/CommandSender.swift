@@ -43,7 +43,7 @@ struct PhoneLayout: Decodable {
             PhoneLayoutElement(key: "volumeBar", x: 0.05, y: 0.06, width: 0.26, height: 0.06, isVisible: true),
             PhoneLayoutElement(key: "settingsButton", x: 0.90, y: 0.05, width: 0.06, height: 0.08, isVisible: true),
             PhoneLayoutElement(key: "previousButton", x: 0.08, y: 0.36, width: 0.09, height: 0.13, isVisible: true),
-            PhoneLayoutElement(key: "albumArt", x: 0.24, y: 0.20, width: 0.52, height: 0.46, isVisible: true),
+            PhoneLayoutElement(key: "albumArt", x: 0.24, y: 0.20, width: 0.46, height: 0.46, isVisible: true),
             PhoneLayoutElement(key: "nextButton", x: 0.83, y: 0.36, width: 0.09, height: 0.13, isVisible: true),
             PhoneLayoutElement(key: "title", x: 0.22, y: 0.70, width: 0.56, height: 0.09, isVisible: true),
             PhoneLayoutElement(key: "artist", x: 0.26, y: 0.80, width: 0.48, height: 0.05, isVisible: true),
