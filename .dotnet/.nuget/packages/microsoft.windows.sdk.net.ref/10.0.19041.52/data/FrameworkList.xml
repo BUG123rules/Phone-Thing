@@ -1,0 +1,5 @@
+<FileList Name="Windows SDK .NET 6.0">
+  <File Type="Managed" Path="lib/net6.0/Microsoft.Windows.SDK.NET.dll" PublicKeyToken="31bf3856ad364e35" AssemblyName="Microsoft.Windows.SDK.NET" AssemblyVersion="10.0.19041.38" FileVersion="10.0.19041.52" Profile="Windows" />
+  <File Type="Managed" Path="lib/net6.0/WinRT.Runtime.dll" PublicKeyToken="99ea127f02d97709" AssemblyName="WinRT.Runtime" AssemblyVersion="2.1.0.0" FileVersion="2.1.6.47881" Profile="Windows" />
+  <File Type="Analyzer" Language="cs" Path="analyzers/dotnet/cs/WinRT.SourceGenerator.dll" PublicKeyToken="99ea127f02d97709" AssemblyName="WinRT.SourceGenerator" AssemblyVersion="2.1.6.47881" FileVersion="2.1.6.47881" Profile="Windows" />
+</FileList>
