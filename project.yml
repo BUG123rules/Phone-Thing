@@ -10,6 +10,7 @@ targets:
     sources:
       - Sources
     info:
+      path: Generated/Info.plist
       properties:
         UILaunchScreen: {}
         NSLocationWhenInUseUsageDescription: "PhoneThing needs your location to show your current driving speed."
