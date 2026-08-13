@@ -1,0 +1,24 @@
+name: PhoneThing
+options:
+  bundleIdPrefix: com.phonething
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  PhoneThing:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      properties:
+        UILaunchScreen: {}
+        NSLocationWhenInUseUsageDescription: "PhoneThing needs your location to show your current driving speed."
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.phonething.app
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_TEAM: ""
