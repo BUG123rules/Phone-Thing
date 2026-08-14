@@ -10,6 +10,9 @@ struct ContentView: View {
     @StateObject private var destinationSearch: DestinationSearchService
 
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    // Last known-valid direction of travel — course reports -1 when invalid (e.g.
+    // stopped), so we hold the last good heading rather than snapping to north.
+    @State private var followHeading: Double = 0
     @State private var isShowingStartSearch = false
     @State private var isShowingDestinationSearch = false
 
@@ -68,10 +71,15 @@ struct ContentView: View {
         .onReceive(speedProvider.$lastLocation.compactMap { $0 }) { location in
             // Once a destination is set, keep the camera centered on the current
             // location at a driving zoom level instead of a static route overview,
-            // so the map actually tracks you turn by turn.
+            // rotated so the direction of travel always points up the screen.
             guard routePlanner.destination != nil else { return }
+            if location.course >= 0 {
+                followHeading = location.course
+            }
             withAnimation {
-                cameraPosition = .camera(MapCamera(centerCoordinate: location.coordinate, distance: 700))
+                cameraPosition = .camera(
+                    MapCamera(centerCoordinate: location.coordinate, distance: 400, heading: followHeading)
+                )
             }
         }
         .sheet(isPresented: $isShowingStartSearch) {
