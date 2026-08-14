@@ -63,12 +63,16 @@ struct ContentView: View {
             speedBlender.stop()
         }
         .onReceive(routePlanner.$route.compactMap { $0 }) { route in
-            let rect = route.polyline.boundingMapRect
-            let padded = rect.insetBy(dx: -rect.width * 0.15, dy: -rect.height * 0.15)
-            withAnimation {
-                cameraPosition = .rect(padded)
-            }
             driveTimer.intervalTargetSeconds = route.expectedTravelTime
+        }
+        .onReceive(speedProvider.$lastLocation.compactMap { $0 }) { location in
+            // Once a destination is set, keep the camera centered on the current
+            // location at a driving zoom level instead of a static route overview,
+            // so the map actually tracks you turn by turn.
+            guard routePlanner.destination != nil else { return }
+            withAnimation {
+                cameraPosition = .camera(MapCamera(centerCoordinate: location.coordinate, distance: 700))
+            }
         }
         .sheet(isPresented: $isShowingStartSearch) {
             LocationSearchSheet(
