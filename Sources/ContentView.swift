@@ -37,13 +37,18 @@ struct ContentView: View {
                     )
                     .padding(.leading, 32)
 
+                    Spacer(minLength: 12)
+
                     MapPanelView(
                         routePlanner: routePlanner,
                         cameraPosition: $cameraPosition,
                         onTapSetStart: { isShowingStartSearch = true },
                         onTapSetDestination: { isShowingDestinationSearch = true }
                     )
+                    .frame(maxWidth: 420)
                     .padding(.vertical, 16)
+
+                    Spacer(minLength: 12)
 
                     TimeView(driveTimer: driveTimer)
                         .padding(.trailing, 12)
@@ -122,15 +127,17 @@ struct SpeedometerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(String(format: "%.0f", speedKmh))
-                .font(.system(size: 140, weight: .bold, design: .rounded))
+                .font(.system(size: 100, weight: .bold, design: .rounded))
                 .foregroundColor(speedColor)
                 .monospacedDigit()
-                .minimumScaleFactor(0.5)
                 .lineLimit(1)
+                // Fixed width for 3 digits so the layout never jumps when speed
+                // crosses from 2 digits to 3 — unused width is just blank space.
+                .frame(width: 210, alignment: .leading)
                 .animation(.easeInOut(duration: 0.4), value: speedColor)
 
             Text("km/h")
-                .font(.system(size: 24, weight: .medium, design: .rounded))
+                .font(.system(size: 20, weight: .medium, design: .rounded))
                 .foregroundColor(.gray)
                 .padding(.bottom, 20)
 
@@ -153,7 +160,7 @@ struct TimeView: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
             Text(Self.format(driveTimer.elapsed))
-                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
@@ -161,23 +168,23 @@ struct TimeView: View {
 
             Button(action: driveTimer.toggle) {
                 Text(driveTimer.isRunning ? "STOP" : "START")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
-                    .frame(width: 110, height: 36)
+                    .frame(width: 90, height: 30)
                     .background(driveTimer.isRunning ? Color.red : Color.green)
                     .clipShape(Capsule())
             }
             .buttonStyle(InstantButtonStyle())
             .animation(nil, value: driveTimer.isRunning)
             .padding(.top, 6)
-            .padding(.bottom, 16)
+            .padding(.bottom, 12)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text("INTERVAL")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.gray)
                 Text(Self.formatSignedDelta(driveTimer.intervalDelta))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(driveTimer.intervalDelta <= 0 ? .green : .red)
                     .monospacedDigit()
             }
