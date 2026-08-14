@@ -71,14 +71,18 @@ struct ContentView: View {
         .onReceive(speedProvider.$lastLocation.compactMap { $0 }) { location in
             // Once a destination is set, keep the camera centered on the current
             // location at a driving zoom level instead of a static route overview,
-            // rotated so the direction of travel always points up the screen.
+            // rotated so the direction of travel always points up the screen. GPS
+            // course is only reliable in motion — when it's not, fall back to the
+            // bearing you'd need to face to continue along the route.
             guard routePlanner.destination != nil else { return }
             if location.course >= 0 {
                 followHeading = location.course
+            } else if let routeHeading = routePlanner.headingToFollowRoute(from: location) {
+                followHeading = routeHeading
             }
             withAnimation {
                 cameraPosition = .camera(
-                    MapCamera(centerCoordinate: location.coordinate, distance: 400, heading: followHeading)
+                    MapCamera(centerCoordinate: location.coordinate, distance: 250, heading: followHeading)
                 )
             }
         }
