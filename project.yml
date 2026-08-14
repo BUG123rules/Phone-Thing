@@ -16,7 +16,8 @@ targets:
         NSLocationWhenInUseUsageDescription: "PhoneThing needs your location to show your current driving speed."
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.phonething.app

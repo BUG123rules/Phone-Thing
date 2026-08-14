@@ -5,6 +5,7 @@ import Combine
 final class LocationSpeedProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var speedKmh: Double = 0
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published private(set) var lastLocation: CLLocation?
 
     private let manager = CLLocationManager()
 
@@ -41,6 +42,7 @@ final class LocationSpeedProvider: NSObject, ObservableObject, CLLocationManager
         // CoreLocation reports speed in m/s, and returns a negative value when it is invalid.
         let metersPerSecond = max(latest.speed, 0)
         speedKmh = metersPerSecond * 3.6
+        lastLocation = latest
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

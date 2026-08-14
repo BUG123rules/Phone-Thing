@@ -3,10 +3,16 @@
 A driving companion app: a distraction-free, "lap time"-style display for turn-by-turn
 trips, built on MapKit/CoreLocation.
 
-## Current stage: 1 — speedometer
+## Current stage: 2 — speed limit + landscape layout
 
-Full-screen current speed readout in km/h, using CoreLocation. No speed limit, map, or
-timing yet — those come in later stages.
+Landscape-locked, speed + speed limit readout pushed to the left (leaving room for the
+map in a later stage). Current speed shades from green to red the further it climbs
+over the speed limit. Speed limit is looked up from OpenStreetMap's public Overpass
+API (nearest tagged road within 25m of your location) — Apple doesn't expose speed
+limit data through any public API, so this is the closest free, keyless equivalent.
+Coverage depends on how well the local roads are tagged in OSM; an unanswered lookup
+just keeps the last known value rather than blanking out. No map or timing yet — those
+come in later stages.
 
 ## Building (requires a Mac with Xcode)
 
