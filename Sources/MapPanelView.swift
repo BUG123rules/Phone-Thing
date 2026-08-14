@@ -4,12 +4,18 @@ import MapKit
 struct MapPanelView: View {
     @ObservedObject var routePlanner: RoutePlanner
     @Binding var cameraPosition: MapCameraPosition
+    let onTapSetStart: () -> Void
     let onTapSetDestination: () -> Void
 
     var body: some View {
         VStack(spacing: 10) {
             Map(position: $cameraPosition) {
                 UserAnnotation()
+
+                if let startingPoint = routePlanner.startingPoint {
+                    Marker(startingPoint.name ?? "Start", coordinate: startingPoint.placemark.coordinate)
+                        .tint(.green)
+                }
 
                 if let route = routePlanner.route {
                     MapPolyline(route.polyline)
@@ -22,20 +28,18 @@ struct MapPanelView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 20))
 
-            Button(action: onTapSetDestination) {
-                HStack(spacing: 8) {
-                    Image(systemName: "mappin.and.ellipse")
-                    Text(destinationLabel)
-                        .lineLimit(1)
-                }
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.15))
-                .clipShape(Capsule())
+            HStack(spacing: 10) {
+                locationButton(
+                    icon: "location.circle",
+                    label: routePlanner.startingPoint?.name ?? "Current Location",
+                    action: onTapSetStart
+                )
+                locationButton(
+                    icon: "mappin.and.ellipse",
+                    label: destinationLabel,
+                    action: onTapSetDestination
+                )
             }
-            .buttonStyle(.plain)
 
             if let errorMessage = routePlanner.errorMessage {
                 Text(errorMessage)
@@ -44,6 +48,24 @@ struct MapPanelView: View {
                     .lineLimit(1)
             }
         }
+    }
+
+    private func locationButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                Text(label)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .foregroundColor(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(Color.white.opacity(0.15))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private var destinationLabel: String {

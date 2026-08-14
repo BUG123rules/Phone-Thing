@@ -10,6 +10,7 @@ struct ContentView: View {
     @StateObject private var destinationSearch: DestinationSearchService
 
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State private var isShowingStartSearch = false
     @State private var isShowingDestinationSearch = false
 
     init() {
@@ -39,12 +40,13 @@ struct ContentView: View {
                     MapPanelView(
                         routePlanner: routePlanner,
                         cameraPosition: $cameraPosition,
+                        onTapSetStart: { isShowingStartSearch = true },
                         onTapSetDestination: { isShowingDestinationSearch = true }
                     )
                     .padding(.vertical, 16)
 
                     TimeView(driveTimer: driveTimer)
-                        .padding(.trailing, 32)
+                        .padding(.trailing, 12)
                 }
             }
         }
@@ -64,8 +66,21 @@ struct ContentView: View {
             }
             driveTimer.intervalTargetSeconds = route.expectedTravelTime
         }
+        .sheet(isPresented: $isShowingStartSearch) {
+            LocationSearchSheet(
+                searchService: destinationSearch,
+                title: "Starting Point",
+                onUseCurrentLocation: { routePlanner.setStartingPoint(nil) }
+            ) { suggestion in
+                destinationSearch.resolve(suggestion) { mapItem in
+                    if let mapItem {
+                        routePlanner.setStartingPoint(mapItem)
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $isShowingDestinationSearch) {
-            DestinationSearchSheet(searchService: destinationSearch) { suggestion in
+            LocationSearchSheet(searchService: destinationSearch, title: "Destination") { suggestion in
                 destinationSearch.resolve(suggestion) { mapItem in
                     if let mapItem {
                         routePlanner.planRoute(to: mapItem)
