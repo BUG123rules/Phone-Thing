@@ -12,8 +12,9 @@ final class LocationSpeedProvider: NSObject, ObservableObject, CLLocationManager
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        // Speed readings only update meaningfully after ~meter-scale movement.
-        manager.distanceFilter = 1
+        manager.activityType = .automotiveNavigation
+        // No minimum-distance gate — take every fix the hardware offers, as fast as it offers it.
+        manager.distanceFilter = kCLDistanceFilterNone
         authorizationStatus = manager.authorizationStatus
     }
 

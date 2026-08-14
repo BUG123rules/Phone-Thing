@@ -1,7 +1,14 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var speedProvider = LocationSpeedProvider()
+    @StateObject private var speedProvider: LocationSpeedProvider
+    @StateObject private var speedBlender: SpeedBlender
+
+    init() {
+        let provider = LocationSpeedProvider()
+        _speedProvider = StateObject(wrappedValue: provider)
+        _speedBlender = StateObject(wrappedValue: SpeedBlender(locationProvider: provider))
+    }
 
     var body: some View {
         ZStack {
@@ -11,12 +18,16 @@ struct ContentView: View {
             case .denied, .restricted:
                 permissionDeniedView
             default:
-                SpeedometerView(speedKmh: speedProvider.speedKmh)
+                SpeedometerView(speedKmh: speedBlender.speedKmh)
             }
         }
         .preferredColorScheme(.dark)
         .onAppear {
             speedProvider.requestPermissionAndStart()
+            speedBlender.start()
+        }
+        .onDisappear {
+            speedBlender.stop()
         }
     }
 
