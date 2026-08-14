@@ -26,8 +26,9 @@ struct MapPanelView: View {
                     Marker(item: destination)
                 }
             }
-            .aspectRatio(1, contentMode: .fit)
-            .frame(maxWidth: 480, maxHeight: 480)
+            // Wide, not square — fills available height and extends left with it,
+            // width always exceeding height by this fixed ratio.
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 20))
 
             HStack(spacing: 8) {

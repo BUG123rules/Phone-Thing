@@ -39,7 +39,7 @@ struct ContentView: View {
                         )
                         Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(minWidth: 170, maxWidth: .infinity)
 
                     MapPanelView(
                         routePlanner: routePlanner,
