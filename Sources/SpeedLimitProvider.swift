@@ -66,9 +66,21 @@ final class SpeedLimitProvider: ObservableObject {
         components.queryItems = [URLQueryItem(name: "data", value: overpassQL)]
         request.httpBody = components.percentEncodedQuery.map { Data($0.utf8) }
 
-        session.dataTask(with: request) { [weak self] data, _, error in
+        print("[SpeedLimit] querying near \(lat), \(lon)")
+
+        session.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
+
+            if let error {
+                print("[SpeedLimit] request failed: \(error)")
+            }
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            let bodyText = data.map { String(decoding: $0, as: UTF8.self) } ?? "<no body>"
+            print("[SpeedLimit] status \(statusCode.map(String.init) ?? "?"), body: \(bodyText.prefix(500))")
+
             let parsed = data.flatMap(Self.parseNearestMaxSpeed(from:))
+            print("[SpeedLimit] parsed maxspeed: \(parsed.map { "\($0) km/h" } ?? "none found")")
+
             DispatchQueue.main.async {
                 self.isQuerying = false
                 if let parsed {

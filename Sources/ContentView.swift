@@ -4,6 +4,7 @@ struct ContentView: View {
     @StateObject private var speedProvider: LocationSpeedProvider
     @StateObject private var speedBlender: SpeedBlender
     @StateObject private var speedLimitProvider: SpeedLimitProvider
+    @StateObject private var driveTimer = DriveTimer()
 
     init() {
         let provider = LocationSpeedProvider()
@@ -28,6 +29,9 @@ struct ContentView: View {
                     .padding(.leading, 32)
 
                     Spacer(minLength: 0)
+
+                    TimeView(driveTimer: driveTimer)
+                        .padding(.trailing, 32)
                 }
             }
         }
@@ -95,6 +99,53 @@ struct SpeedometerView: View {
                     .monospacedDigit()
             }
         }
+    }
+}
+
+struct TimeView: View {
+    @ObservedObject var driveTimer: DriveTimer
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(Self.format(driveTimer.elapsed))
+                .font(.system(size: 80, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .monospacedDigit()
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+
+            Button(action: driveTimer.toggle) {
+                Text(driveTimer.isRunning ? "STOP" : "START")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(.black)
+                    .frame(width: 140, height: 44)
+                    .background(driveTimer.isRunning ? Color.red : Color.green)
+                    .clipShape(Capsule())
+            }
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("INTERVAL \(driveTimer.intervalNumber)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.gray)
+                Text(Self.format(driveTimer.intervalElapsed))
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    private static func format(_ interval: TimeInterval) -> String {
+        let total = Int(interval)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
