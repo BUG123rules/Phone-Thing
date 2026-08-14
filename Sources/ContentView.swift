@@ -30,14 +30,16 @@ struct ContentView: View {
             case .denied, .restricted:
                 permissionDeniedView
             default:
-                HStack(spacing: 16) {
-                    SpeedometerView(
-                        speedKmh: speedBlender.speedKmh,
-                        speedLimitKmh: speedLimitProvider.speedLimitKmh
-                    )
-                    .padding(.leading, 32)
-
-                    Spacer(minLength: 12)
+                HStack(spacing: 8) {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        SpeedometerView(
+                            speedKmh: speedBlender.speedKmh,
+                            speedLimitKmh: speedLimitProvider.speedLimitKmh
+                        )
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity)
 
                     MapPanelView(
                         routePlanner: routePlanner,
@@ -45,13 +47,10 @@ struct ContentView: View {
                         onTapSetStart: { isShowingStartSearch = true },
                         onTapSetDestination: { isShowingDestinationSearch = true }
                     )
-                    .frame(maxWidth: 420)
-                    .padding(.vertical, 16)
-
-                    Spacer(minLength: 12)
+                    .padding(.vertical, 8)
 
                     TimeView(driveTimer: driveTimer)
-                        .padding(.trailing, 12)
+                        .padding(.trailing, 8)
                 }
             }
         }
@@ -127,26 +126,26 @@ struct SpeedometerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(String(format: "%.0f", speedKmh))
-                .font(.system(size: 100, weight: .bold, design: .rounded))
+                .font(.system(size: 72, weight: .bold, design: .rounded))
                 .foregroundColor(speedColor)
                 .monospacedDigit()
                 .lineLimit(1)
                 // Fixed width for 3 digits so the layout never jumps when speed
                 // crosses from 2 digits to 3 — unused width is just blank space.
-                .frame(width: 210, alignment: .leading)
+                .frame(width: 150, alignment: .leading)
                 .animation(.easeInOut(duration: 0.4), value: speedColor)
 
             Text("km/h")
-                .font(.system(size: 20, weight: .medium, design: .rounded))
+                .font(.system(size: 16, weight: .medium, design: .rounded))
                 .foregroundColor(.gray)
-                .padding(.bottom, 20)
+                .padding(.bottom, 10)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("SPEED LIMIT")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.gray)
                 Text(speedLimitKmh.map { String(format: "%.0f", $0) } ?? "--")
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .monospacedDigit()
             }
@@ -176,8 +175,8 @@ struct TimeView: View {
             }
             .buttonStyle(InstantButtonStyle())
             .animation(nil, value: driveTimer.isRunning)
-            .padding(.top, 6)
-            .padding(.bottom, 12)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text("INTERVAL")

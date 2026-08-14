@@ -8,7 +8,7 @@ struct MapPanelView: View {
     let onTapSetDestination: () -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             Map(position: $cameraPosition) {
                 UserAnnotation()
 
@@ -26,9 +26,11 @@ struct MapPanelView: View {
                     Marker(item: destination)
                 }
             }
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 480, maxHeight: 480)
             .clipShape(RoundedRectangle(cornerRadius: 20))
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 locationButton(
                     icon: "location.circle",
                     label: routePlanner.startingPoint?.name ?? "Current Location",
@@ -57,10 +59,10 @@ struct MapPanelView: View {
                 Text(label)
                     .lineLimit(1)
             }
-            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .font(.system(size: 14, weight: .semibold, design: .rounded))
             .foregroundColor(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
             .background(Color.white.opacity(0.15))
             .clipShape(Capsule())
