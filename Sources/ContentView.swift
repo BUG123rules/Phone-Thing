@@ -1,16 +1,24 @@
 import SwiftUI
+import MapKit
 
 struct ContentView: View {
     @StateObject private var speedProvider: LocationSpeedProvider
     @StateObject private var speedBlender: SpeedBlender
     @StateObject private var speedLimitProvider: SpeedLimitProvider
     @StateObject private var driveTimer = DriveTimer()
+    @StateObject private var routePlanner: RoutePlanner
+    @StateObject private var destinationSearch: DestinationSearchService
+
+    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State private var isShowingDestinationSearch = false
 
     init() {
         let provider = LocationSpeedProvider()
         _speedProvider = StateObject(wrappedValue: provider)
         _speedBlender = StateObject(wrappedValue: SpeedBlender(locationProvider: provider))
         _speedLimitProvider = StateObject(wrappedValue: SpeedLimitProvider(locationProvider: provider))
+        _routePlanner = StateObject(wrappedValue: RoutePlanner(locationProvider: provider))
+        _destinationSearch = StateObject(wrappedValue: DestinationSearchService(locationProvider: provider))
     }
 
     var body: some View {
@@ -21,14 +29,19 @@ struct ContentView: View {
             case .denied, .restricted:
                 permissionDeniedView
             default:
-                HStack(spacing: 0) {
+                HStack(spacing: 16) {
                     SpeedometerView(
                         speedKmh: speedBlender.speedKmh,
                         speedLimitKmh: speedLimitProvider.speedLimitKmh
                     )
                     .padding(.leading, 32)
 
-                    Spacer(minLength: 0)
+                    MapPanelView(
+                        routePlanner: routePlanner,
+                        cameraPosition: $cameraPosition,
+                        onTapSetDestination: { isShowingDestinationSearch = true }
+                    )
+                    .padding(.vertical, 16)
 
                     TimeView(driveTimer: driveTimer)
                         .padding(.trailing, 32)
@@ -42,6 +55,23 @@ struct ContentView: View {
         }
         .onDisappear {
             speedBlender.stop()
+        }
+        .onReceive(routePlanner.$route.compactMap { $0 }) { route in
+            let rect = route.polyline.boundingMapRect
+            let padded = rect.insetBy(dx: -rect.width * 0.15, dy: -rect.height * 0.15)
+            withAnimation {
+                cameraPosition = .rect(padded)
+            }
+            driveTimer.intervalTargetSeconds = route.expectedTravelTime
+        }
+        .sheet(isPresented: $isShowingDestinationSearch) {
+            DestinationSearchSheet(searchService: destinationSearch) { suggestion in
+                destinationSearch.resolve(suggestion) { mapItem in
+                    if let mapItem {
+                        routePlanner.planRoute(to: mapItem)
+                    }
+                }
+            }
         }
     }
 
@@ -108,7 +138,7 @@ struct TimeView: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
             Text(Self.format(driveTimer.elapsed))
-                .font(.system(size: 80, weight: .bold, design: .rounded))
+                .font(.system(size: 48, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
@@ -116,23 +146,23 @@ struct TimeView: View {
 
             Button(action: driveTimer.toggle) {
                 Text(driveTimer.isRunning ? "STOP" : "START")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
-                    .frame(width: 140, height: 44)
+                    .frame(width: 110, height: 36)
                     .background(driveTimer.isRunning ? Color.red : Color.green)
                     .clipShape(Capsule())
             }
             .buttonStyle(InstantButtonStyle())
             .animation(nil, value: driveTimer.isRunning)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.top, 6)
+            .padding(.bottom, 16)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text("INTERVAL")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.gray)
                 Text(Self.formatSignedDelta(driveTimer.intervalDelta))
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(driveTimer.intervalDelta <= 0 ? .green : .red)
                     .monospacedDigit()
             }

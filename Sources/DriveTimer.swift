@@ -3,19 +3,17 @@ import Foundation
 /// Tracks elapsed drive time via a manual start/stop toggle. Arrival won't auto-stop
 /// this until routing/ETA exists, so for now it's a plain stopwatch.
 ///
-/// Also derives an interval delta — actual elapsed time minus a target — as a
-/// placeholder for the eventual ETA-based sector splits. There's no route yet to
-/// compute real per-sector targets from, so every interval is compared against a
-/// flat 1:00.00 for now.
+/// Also derives an interval delta — actual elapsed time minus a target — as a stand-in
+/// for the eventual ETA-based sector splits. Defaults to a flat 1:00.00 target until a
+/// route is planned, at which point `ContentView` sets this to the route's ETA.
 final class DriveTimer: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var elapsed: TimeInterval = 0
+    @Published var intervalTargetSeconds: TimeInterval = 60
 
     private var runStartDate: Date?
     private var accumulatedBeforeCurrentRun: TimeInterval = 0
     private var ticker: Timer?
-
-    let intervalTargetSeconds: TimeInterval = 60
 
     /// Negative = ahead of the placeholder target, positive = behind it.
     var intervalDelta: TimeInterval {
