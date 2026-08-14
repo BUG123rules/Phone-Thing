@@ -122,30 +122,49 @@ struct TimeView: View {
                     .background(driveTimer.isRunning ? Color.red : Color.green)
                     .clipShape(Capsule())
             }
+            .buttonStyle(InstantButtonStyle())
+            .animation(nil, value: driveTimer.isRunning)
             .padding(.top, 8)
             .padding(.bottom, 24)
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text("INTERVAL \(driveTimer.intervalNumber)")
+                Text("INTERVAL")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.gray)
-                Text(Self.format(driveTimer.intervalElapsed))
+                Text(Self.formatSignedDelta(driveTimer.intervalDelta))
                     .font(.system(size: 44, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(driveTimer.intervalDelta <= 0 ? .green : .red)
                     .monospacedDigit()
             }
         }
     }
 
+    /// mm:ss.xx (or h:mm:ss.xx once past an hour).
     private static func format(_ interval: TimeInterval) -> String {
-        let total = Int(interval)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
+        let clamped = max(interval, 0)
+        let totalCentiseconds = Int((clamped * 100).rounded())
+        let centiseconds = totalCentiseconds % 100
+        let totalSeconds = totalCentiseconds / 100
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
         if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            return String(format: "%d:%02d:%02d.%02d", hours, minutes, seconds, centiseconds)
         }
-        return String(format: "%02d:%02d", minutes, seconds)
+        return String(format: "%02d:%02d.%02d", minutes, seconds, centiseconds)
+    }
+
+    /// Same format as `format(_:)`, prefixed with +/- based on sign.
+    private static func formatSignedDelta(_ delta: TimeInterval) -> String {
+        let sign = delta <= 0 ? "-" : "+"
+        return sign + format(abs(delta))
+    }
+}
+
+/// No default press animation/highlight — the label swaps instantly on tap.
+private struct InstantButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
 
